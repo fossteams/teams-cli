@@ -8,8 +8,21 @@ The CLI only let you log-in and fetches your user and conversations, but just di
 This project is still WIP and will be updated soon with new features. The goal is to
 have a CLI / TUI replacement for the Microsoft Teams desktop client.
 
+## Requirements
+
+- [Golang](https://golang.org/)
+
 ## Usage
+
+Follow the instructions on how to obtain a token with [teams-token](https://github.com/fossteams/teams-token),
+then simply run the following to start the app. Binary releases will appear on this repository as soon as
+we have a product with more features.
 
 ```bash
 go run ./main.go
 ```
+
+If everything goes well, you should see something like this:
+![Teams CLI example](./docs/screenshots/login-successful.png)
+
+Yes, this is all this CLI does at the moment :D
