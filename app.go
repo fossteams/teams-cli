@@ -9,6 +9,7 @@ import (
 	"github.com/rivo/tview"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/html"
+	"sort"
 	"strings"
 	"time"
 )
@@ -216,6 +217,7 @@ func textMessage(input string) string {
 
 func (s *AppState) loadConversations(c *csa.Channel) {
 	messages, err := s.teamsClient.GetMessages(c)
+
 	if err != nil {
 		s.showError(err)
 		time.Sleep(5 * time.Second)
@@ -224,12 +226,18 @@ func (s *AppState) loadConversations(c *csa.Channel) {
 		s.app.SetFocus(s.pages)
 		return
 	}
-
 	// Clear chat
 	chatList := s.components[ViChat].(*tview.List)
 	chatList.Clear()
 
+	// Sort Messages by time
+	sort.Sort(csa.SortMessageByTime(messages))
+
 	for _, message := range messages {
+		if message.ImDisplayName == "" {
+			// Skip messages w/o author
+			continue
+		}
 		chatList.AddItem(textMessage(message.Content), message.ImDisplayName, 0, nil)
 	}
 	s.app.Draw()
