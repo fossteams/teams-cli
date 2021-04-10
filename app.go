@@ -221,6 +221,7 @@ func (s *AppState) loadConversations(c *csa.Channel) {
 		time.Sleep(5 * time.Second)
 		s.pages.SwitchToPage(PageMain)
 		s.app.Draw()
+		s.app.SetFocus(s.pages)
 		return
 	}
 
@@ -229,7 +230,7 @@ func (s *AppState) loadConversations(c *csa.Channel) {
 	chatList.Clear()
 
 	for _, message := range messages {
-		chatList.AddItem(textMessage(message.Content), message.From, 0, nil)
+		chatList.AddItem(textMessage(message.Content), message.ImDisplayName, 0, nil)
 	}
 	s.app.Draw()
 }
