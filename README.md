@@ -19,10 +19,19 @@ then simply run the following to start the app. Binary releases will appear on t
 we have a product with more features.
 
 ```bash
-go run ./main.go
+go run ./
 ```
 
 If everything goes well, you should see something like this:
-![Teams CLI example](./docs/screenshots/login-successful.png)
+![Teams CLI example](./docs/screenshots/2021-04-10.png)
 
-Yes, this is all this CLI does at the moment :D
+## What works
+
+- Logging in into Teams using the token generated via `teams-token`
+- Getting the list of Teams + Channels
+- Reading channels
+
+## What doesn't work
+
+- Names are not shown, instead a URL is displayed
+- Everything else
