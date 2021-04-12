@@ -1,6 +1,8 @@
 # teams-cli
 
 A Command Line Interface (or TUI) to interact with Microsoft Teams
+that uses the [teams-api](https://github.com/fossteams/teams-api)
+Go package.
 
 ## Status
 
