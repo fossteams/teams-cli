@@ -26,7 +26,7 @@ go run ./
 ```
 
 If everything goes well, you should see something like this:
-![Teams CLI example](./docs/screenshots/2021-04-10.png)
+![Teams CLI example](./docs/screenshots/2021-04-13.png)
 
 ## What works
 
