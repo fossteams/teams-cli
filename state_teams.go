@@ -4,7 +4,7 @@ import (
 	"fmt"
 	teams_api "github.com/fossteams/teams-api"
 	"github.com/fossteams/teams-api/pkg/csa"
-	"github.com/fossteams/teams-api/pkg/mt"
+	"github.com/fossteams/teams-api/pkg/models"
 	"sort"
 )
 
@@ -12,7 +12,7 @@ type TeamsState struct {
 	teamsClient *teams_api.TeamsClient
 
 	conversations  *csa.ConversationResponse
-	me             *mt.User
+	me             *models.User
 	pinnedChannels []csa.ChannelId
 	channelById    map[string]Channel
 	teamById       map[string]*csa.Team
