@@ -38,5 +38,4 @@ If everything goes well, you should see something like this:
 
 ## What doesn't work
 
-- Names are not shown, instead a URL is displayed
 - Everything else
