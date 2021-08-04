@@ -39,3 +39,7 @@ If everything goes well, you should see something like this:
 ## What doesn't work
 
 - Everything else
+
+## You might also be interested in
+
+- [fossteams-frontend](https://github.com/fossteams/fossteams-frontend): a Vue based frontend for Microsoft Teams
