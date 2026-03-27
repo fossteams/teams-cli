@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,35 @@ func TestParseAppOptionsDebugFlagCanBeOverridden(t *testing.T) {
 	}
 }
 
+func TestParseAppOptionsSupportsEqualsForms(t *testing.T) {
+	options, err := parseAppOptions([]string{
+		"--msg=12",
+		"--log-level=warn",
+		"--token-dir=/tmp/teams-cli-tokens",
+		"--refresh-messages=12s",
+		"--refresh-tree=30",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if options.MessageLimit != 12 {
+		t.Fatalf("expected message limit 12, got %d", options.MessageLimit)
+	}
+	if options.LogLevel != logrus.WarnLevel {
+		t.Fatalf("expected warn level, got %s", options.LogLevel)
+	}
+	if options.TokenDir != "/tmp/teams-cli-tokens" {
+		t.Fatalf("expected token dir to be parsed, got %q", options.TokenDir)
+	}
+	if options.RefreshMessagesInterval != 12*time.Second {
+		t.Fatalf("expected 12s message refresh interval, got %s", options.RefreshMessagesInterval)
+	}
+	if options.RefreshConversationInterval != 30*time.Second {
+		t.Fatalf("expected 30s tree refresh interval, got %s", options.RefreshConversationInterval)
+	}
+}
+
 func TestParseFlexibleDurationNumericSeconds(t *testing.T) {
 	got, err := parseFlexibleDuration("30")
 	if err != nil {
@@ -127,9 +157,35 @@ func TestParseAppOptionsRejectsInvalidRefreshInterval(t *testing.T) {
 	}
 }
 
+func TestParseAppOptionsRejectsMissingFlagValues(t *testing.T) {
+	testCases := []string{
+		"--msg",
+		"--log-level",
+		"--token-dir",
+		"--refresh-messages",
+		"--refresh-tree",
+	}
+
+	for _, arg := range testCases {
+		if _, err := parseAppOptions([]string{arg}); err == nil {
+			t.Fatalf("expected an error for %s without a value", arg)
+		}
+	}
+}
+
 func TestParseAppOptionsRejectsUnknownArgument(t *testing.T) {
 	_, err := parseAppOptions([]string{"foo=bar"})
 	if err == nil {
 		t.Fatal("expected an error for an unknown argument")
+	}
+}
+
+func TestUsageTextIncludesDiagnosticsAndRefreshFlags(t *testing.T) {
+	text := usageText("teams-cli")
+
+	for _, needle := range []string{"--doctor", "--no-live", "--refresh-messages", "--refresh-tree"} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("expected usage text to mention %s", needle)
+		}
 	}
 }

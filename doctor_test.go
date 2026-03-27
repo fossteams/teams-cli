@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -66,6 +67,68 @@ func TestParseJWTMetadata(t *testing.T) {
 	}
 	if !meta.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("expected expiry %s, got %s", expiresAt, meta.ExpiresAt)
+	}
+}
+
+func TestResolveTokenRejectsEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "token-teams.jwt")
+	if err := os.WriteFile(tokenPath, []byte("   \n"), 0o600); err != nil {
+		t.Fatalf("unable to write token file: %v", err)
+	}
+
+	_, err := resolveToken(tokenTypeTeams, dir)
+	if err == nil {
+		t.Fatal("expected an error for an empty token file")
+	}
+	if !strings.Contains(err.Error(), "is empty") {
+		t.Fatalf("expected empty token guidance, got %v", err)
+	}
+}
+
+func TestApplyTokenDirToEnvExportsRuntimeTokens(t *testing.T) {
+	dir := t.TempDir()
+	writeToken := func(tokenType, value string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "token-"+tokenType+".jwt"), []byte(value), 0o600); err != nil {
+			t.Fatalf("unable to write %s token: %v", tokenType, err)
+		}
+	}
+
+	writeToken(tokenTypeSkype, "skype-token")
+	writeToken(tokenTypeChatSvcAgg, "chat-token")
+	writeToken(tokenTypeTeams, "teams-token")
+	t.Setenv(tokenEnvName(tokenTypeSkype), "")
+	t.Setenv(tokenEnvName(tokenTypeChatSvcAgg), "")
+	t.Setenv(tokenEnvName(tokenTypeTeams), "")
+
+	if err := applyTokenDirToEnv(dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := os.Getenv(tokenEnvName(tokenTypeSkype)); got != "skype-token" {
+		t.Fatalf("expected exported skype token, got %q", got)
+	}
+	if got := os.Getenv(tokenEnvName(tokenTypeChatSvcAgg)); got != "chat-token" {
+		t.Fatalf("expected exported chatsvcagg token, got %q", got)
+	}
+	if got := os.Getenv(tokenEnvName(tokenTypeTeams)); got != "" {
+		t.Fatalf("expected teams token env to stay untouched, got %q", got)
+	}
+}
+
+func TestParseJWTMetadataRejectsInvalidExpiry(t *testing.T) {
+	token := testJWT(t, map[string]any{
+		"aud": "https://teams.microsoft.com",
+		"exp": "not-a-number",
+	})
+
+	_, err := parseJWTMetadata(token)
+	if err == nil {
+		t.Fatal("expected an invalid exp error")
+	}
+	if !strings.Contains(err.Error(), "invalid exp claim") {
+		t.Fatalf("expected invalid exp claim error, got %v", err)
 	}
 }
 
