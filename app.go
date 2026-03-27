@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	teams_api "github.com/fossteams/teams-api"
 	"github.com/fossteams/teams-api/pkg/csa"
@@ -12,6 +14,7 @@ import (
 	"golang.org/x/net/html"
 	"hash/fnv"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -26,6 +29,8 @@ type AppState struct {
 	app    *tview.Application
 	pages  *tview.Pages
 	logger *logrus.Logger
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	TeamsState
 	components               map[string]tview.Primitive
@@ -35,12 +40,19 @@ type AppState struct {
 	focusedComponent         string
 	previousFocus            string
 	chatPaneFocusable        bool
+	httpClient               *http.Client
 	stateMu                  sync.RWMutex
 	currentConversation      ConversationTarget
 	currentConversationSet   bool
 	currentMessagesSignature string
 	lastMessageSyncAt        time.Time
 	liveLoopStarted          uint32
+	liveMessageRefreshActive uint32
+	liveTreeRefreshActive    uint32
+	loadCancelMu             sync.Mutex
+	activeLoadCancel         context.CancelFunc
+	activeLoadCancelSeq      uint64
+	shutdownOnce             sync.Once
 }
 
 const (
@@ -50,6 +62,10 @@ const (
 	helpBarHeight                   = 1
 	liveMessageRefreshInterval      = 5 * time.Second
 	liveConversationRefreshInterval = 15 * time.Second
+	messageRequestTimeout           = 5 * time.Second
+	messageFetchMaxAttempts         = 3
+	messageFetchRetryBaseDelay      = 250 * time.Millisecond
+	messageFetchRetryMaxDelay       = time.Second
 )
 
 type treeViewState struct {
@@ -58,7 +74,106 @@ type treeViewState struct {
 	selectedTargetID string
 }
 
+type messageFetchStatusError struct {
+	StatusCode int
+	Status     string
+	Body       string
+}
+
+func (e *messageFetchStatusError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Body) == "" {
+		return fmt.Sprintf("unable to fetch messages: unexpected status %s", e.Status)
+	}
+
+	return fmt.Sprintf("unable to fetch messages: unexpected status %s: %s", e.Status, strings.TrimSpace(e.Body))
+}
+
+func newMessageHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: messageRequestTimeout,
+	}
+}
+
+func (s *AppState) initRuntime(parent context.Context) {
+	if parent == nil {
+		parent = context.Background()
+	}
+
+	s.ctx, s.cancel = context.WithCancel(parent)
+	if s.httpClient == nil {
+		s.httpClient = newMessageHTTPClient()
+	}
+}
+
+func (s *AppState) ensureRuntime() {
+	if s.ctx != nil && s.cancel != nil && s.httpClient != nil {
+		return
+	}
+
+	s.initRuntime(context.Background())
+}
+
+func (s *AppState) appContext() context.Context {
+	if s.ctx != nil {
+		return s.ctx
+	}
+
+	return context.Background()
+}
+
+func (s *AppState) requestStop() {
+	s.shutdownOnce.Do(func() {
+		s.cancelActiveLoad()
+		if s.cancel != nil {
+			s.cancel()
+		}
+		if s.app != nil {
+			s.app.Stop()
+		}
+	})
+}
+
+func (s *AppState) replaceActiveLoadCancel(loadSeq uint64, cancel context.CancelFunc) {
+	s.loadCancelMu.Lock()
+	previousCancel := s.activeLoadCancel
+	s.activeLoadCancel = cancel
+	s.activeLoadCancelSeq = loadSeq
+	s.loadCancelMu.Unlock()
+
+	if previousCancel != nil {
+		previousCancel()
+	}
+}
+
+func (s *AppState) clearActiveLoadCancel(loadSeq uint64) {
+	s.loadCancelMu.Lock()
+	defer s.loadCancelMu.Unlock()
+
+	if s.activeLoadCancelSeq != loadSeq {
+		return
+	}
+
+	s.activeLoadCancel = nil
+	s.activeLoadCancelSeq = 0
+}
+
+func (s *AppState) cancelActiveLoad() {
+	s.loadCancelMu.Lock()
+	cancel := s.activeLoadCancel
+	s.activeLoadCancel = nil
+	s.activeLoadCancelSeq = 0
+	s.loadCancelMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func (s *AppState) createApp() {
+	s.ensureRuntime()
 	s.pages = tview.NewPages()
 	s.components = map[string]tview.Primitive{}
 
@@ -173,13 +288,19 @@ func (s *AppState) start() {
 		return
 	}
 
+	select {
+	case <-s.appContext().Done():
+		return
+	default:
+	}
+
 	go s.fillMainWindow()
 }
 
 func (s *AppState) showError(err error) {
 	val, ok := s.components[TvError]
 	if !ok {
-		s.logger.Fatalf("unable to show error on screen: %v", err)
+		s.logger.Errorf("unable to show error on screen: %v", err)
 		return
 	}
 	s.app.QueueUpdateDraw(func() {
@@ -244,6 +365,12 @@ func (s *AppState) fillMainWindow() {
 	treeView.SetRoot(rootNode)
 
 	s.app.QueueUpdateDraw(func() {
+		select {
+		case <-s.appContext().Done():
+			return
+		default:
+		}
+
 		s.selectTreeNode(selectedNode)
 
 		s.pages.SwitchToPage(PageMain)
@@ -669,14 +796,34 @@ func (s *AppState) runLiveRefreshLoop() {
 	for {
 		select {
 		case <-messageTicker.C:
-			s.refreshSelectedConversationMessages()
+			if !atomic.CompareAndSwapUint32(&s.liveMessageRefreshActive, 0, 1) {
+				continue
+			}
+			go func() {
+				defer atomic.StoreUint32(&s.liveMessageRefreshActive, 0)
+				s.refreshSelectedConversationMessages()
+			}()
 		case <-conversationTicker.C:
-			s.refreshConversationTree()
+			if !atomic.CompareAndSwapUint32(&s.liveTreeRefreshActive, 0, 1) {
+				continue
+			}
+			go func() {
+				defer atomic.StoreUint32(&s.liveTreeRefreshActive, 0)
+				s.refreshConversationTree()
+			}()
+		case <-s.appContext().Done():
+			return
 		}
 	}
 }
 
 func (s *AppState) refreshSelectedConversationMessages() {
+	select {
+	case <-s.appContext().Done():
+		return
+	default:
+	}
+
 	if atomic.LoadUint64(&s.activeLoadSeq) != 0 {
 		return
 	}
@@ -686,10 +833,19 @@ func (s *AppState) refreshSelectedConversationMessages() {
 		return
 	}
 
-	messages, err := s.fetchMessages(target)
+	messages, err := s.fetchMessages(s.appContext(), target)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		s.logger.Warnf("live message refresh failed for %s: %v", target.ID, err)
 		s.app.QueueUpdateDraw(func() {
+			select {
+			case <-s.appContext().Done():
+				return
+			default:
+			}
+
 			if !s.currentConversationIs(target.ID) {
 				return
 			}
@@ -701,6 +857,12 @@ func (s *AppState) refreshSelectedConversationMessages() {
 	signature := messagesSignature(messages)
 	syncedAt := time.Now()
 	s.app.QueueUpdateDraw(func() {
+		select {
+		case <-s.appContext().Done():
+			return
+		default:
+		}
+
 		currentTarget, ok, _, _ := s.currentConversationSnapshot()
 		if !ok || currentTarget.ID != target.ID {
 			return
@@ -717,6 +879,12 @@ func (s *AppState) refreshSelectedConversationMessages() {
 }
 
 func (s *AppState) refreshConversationTree() {
+	select {
+	case <-s.appContext().Done():
+		return
+	default:
+	}
+
 	data, err := s.fetchConversationData()
 	if err != nil {
 		s.logger.Warnf("live conversation refresh failed: %v", err)
@@ -724,6 +892,12 @@ func (s *AppState) refreshConversationTree() {
 	}
 
 	s.app.QueueUpdateDraw(func() {
+		select {
+		case <-s.appContext().Done():
+			return
+		default:
+		}
+
 		treeView, ok := s.components[TrChat].(*tview.TreeView)
 		if !ok {
 			return
@@ -777,7 +951,7 @@ func helpBarText(focusedComponent string) string {
 
 func (s *AppState) globalKeyHandler(event *tcell.EventKey) *tcell.EventKey {
 	if event.Key() == tcell.KeyCtrlC {
-		s.app.Stop()
+		s.requestStop()
 		return nil
 	}
 
@@ -791,7 +965,7 @@ func (s *AppState) globalKeyHandler(event *tcell.EventKey) *tcell.EventKey {
 			}
 			return nil
 		case 'q':
-			s.app.Stop()
+			s.requestStop()
 			return nil
 		}
 	}
@@ -1050,6 +1224,7 @@ func conversationHintText(node *tview.TreeNode) (string, string) {
 }
 
 func (s *AppState) showConversationHint(node *tview.TreeNode) {
+	s.cancelActiveLoad()
 	atomic.AddUint64(&s.loadSeq, 1)
 	atomic.StoreUint64(&s.activeLoadSeq, 0)
 	s.chatPaneFocusable = false
@@ -1079,6 +1254,7 @@ func (s *AppState) loadConversationForNode(node *tview.TreeNode) {
 		return
 	}
 	s.setCurrentConversation(target)
+	s.cancelActiveLoad()
 
 	chatList := s.components[ViChat].(*tview.List)
 	chatList.Clear()
@@ -1089,13 +1265,15 @@ func (s *AppState) loadConversationForNode(node *tview.TreeNode) {
 
 	loadSeq := atomic.AddUint64(&s.loadSeq, 1)
 	atomic.StoreUint64(&s.activeLoadSeq, loadSeq)
+	loadCtx, cancel := context.WithCancel(s.appContext())
+	s.replaceActiveLoadCancel(loadSeq, cancel)
 	loadingStarted := time.Now()
 	mainText, secondaryText := loadingStatusText(s.messageLimit, loadingStarted, 0)
 	chatList.AddItem(mainText, secondaryText, 0, nil)
 
 	done := make(chan struct{})
 	go s.animateMessageLoading(loadSeq, loadingStarted, done)
-	go s.loadMessages(target, loadSeq, done)
+	go s.loadMessages(loadCtx, target, loadSeq, done)
 }
 
 func (s *AppState) animateMessageLoading(loadSeq uint64, startedAt time.Time, done <-chan struct{}) {
@@ -1107,9 +1285,17 @@ func (s *AppState) animateMessageLoading(loadSeq uint64, startedAt time.Time, do
 		select {
 		case <-done:
 			return
+		case <-s.appContext().Done():
+			return
 		case <-ticker.C:
 			step += 1
 			s.app.QueueUpdateDraw(func() {
+				select {
+				case <-s.appContext().Done():
+					return
+				default:
+				}
+
 				if atomic.LoadUint64(&s.activeLoadSeq) != loadSeq {
 					return
 				}
@@ -1161,21 +1347,33 @@ func loadingBarFrame(step, width int) string {
 	return "[" + string(bar) + "]"
 }
 
-func (s *AppState) loadMessages(target ConversationTarget, loadSeq uint64, done chan struct{}) {
+func (s *AppState) loadMessages(ctx context.Context, target ConversationTarget, loadSeq uint64, done chan struct{}) {
 	defer close(done)
+	defer s.clearActiveLoadCancel(loadSeq)
 
-	messages, err := s.fetchMessages(target)
+	messages, err := s.fetchMessages(ctx, target)
 
 	if err != nil {
+		atomic.CompareAndSwapUint64(&s.activeLoadSeq, loadSeq, 0)
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		if atomic.LoadUint64(&s.loadSeq) != loadSeq {
 			return
 		}
-		atomic.CompareAndSwapUint64(&s.activeLoadSeq, loadSeq, 0)
-		s.showError(err)
-		time.Sleep(5 * time.Second)
 		s.app.QueueUpdateDraw(func() {
-			s.pages.SwitchToPage(PageMain)
-			s.focusComponent(TrChat)
+			select {
+			case <-s.appContext().Done():
+				return
+			default:
+			}
+
+			currentTarget, ok, _, _ := s.currentConversationSnapshot()
+			if !ok || currentTarget.ID != target.ID {
+				return
+			}
+
+			s.renderConversationLoadError(currentTarget, err)
 		})
 		return
 	}
@@ -1188,6 +1386,12 @@ func (s *AppState) loadMessages(target ConversationTarget, loadSeq uint64, done 
 	syncedAt := time.Now()
 	signature := messagesSignature(messages)
 	s.app.QueueUpdateDraw(func() {
+		select {
+		case <-s.appContext().Done():
+			return
+		default:
+		}
+
 		currentTarget, ok, _, _ := s.currentConversationSnapshot()
 		if !ok || currentTarget.ID != target.ID {
 			return
@@ -1198,7 +1402,103 @@ func (s *AppState) loadMessages(target ConversationTarget, loadSeq uint64, done 
 	})
 }
 
-func (s *AppState) fetchMessages(target ConversationTarget) ([]csa.ChatMessage, error) {
+func (s *AppState) renderConversationLoadError(target ConversationTarget, err error) {
+	chatList, ok := s.components[ViChat].(*tview.List)
+	if !ok {
+		return
+	}
+
+	mainText, secondaryText := conversationLoadErrorText(err)
+	chatList.Clear()
+	chatList.SetTitle(conversationPaneTitle(target, time.Time{}, "load failed")).
+		SetBorder(true).
+		SetTitleAlign(tview.AlignCenter)
+	chatList.AddItem(mainText, secondaryText, 0, nil)
+	chatList.AddItem("Retry", "Press Right or l to retry this conversation. Esc returns to the list.", 0, nil)
+	s.chatPaneFocusable = true
+}
+
+func conversationLoadErrorText(err error) (string, string) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "Timed out while loading recent messages", "Teams did not respond before the request timeout. Press Right or l to retry."
+	case errors.Is(err, context.Canceled):
+		return "Loading was cancelled", "Move to another conversation or press Right or l to retry."
+	}
+
+	var statusErr *messageFetchStatusError
+	if errors.As(err, &statusErr) {
+		switch statusErr.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			return "Teams rejected the request", "Your Teams tokens may have expired. Refresh them and try again."
+		case http.StatusTooManyRequests:
+			return "Teams is rate limiting requests", "Wait a few seconds, then press Right or l to retry."
+		default:
+			if statusErr.StatusCode >= http.StatusInternalServerError {
+				return "Teams returned a server error", "The service is temporarily unavailable. Press Right or l to retry."
+			}
+		}
+	}
+
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		message = "An unexpected error occurred while loading recent messages."
+	}
+
+	return "Unable to load recent messages", message
+}
+
+func shouldRetryMessageFetch(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var statusErr *messageFetchStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode == http.StatusTooManyRequests || statusErr.StatusCode >= http.StatusInternalServerError
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout() || netErr.Temporary()
+	}
+
+	return false
+}
+
+func messageFetchBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+
+	backoff := messageFetchRetryBaseDelay * time.Duration(1<<(attempt-1))
+	if backoff > messageFetchRetryMaxDelay {
+		return messageFetchRetryMaxDelay
+	}
+
+	return backoff
+}
+
+func (s *AppState) waitForMessageFetchRetry(ctx context.Context, attempt int) error {
+	timer := time.NewTimer(messageFetchBackoff(attempt))
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (s *AppState) fetchMessages(ctx context.Context, target ConversationTarget) ([]csa.ChatMessage, error) {
+	if s.teamsClient == nil {
+		return nil, fmt.Errorf("teams client is nil")
+	}
+
 	baseURL, err := url.Parse(csa.MessagesHost)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse messages host: %v", err)
@@ -1215,12 +1515,49 @@ func (s *AppState) fetchMessages(target ConversationTarget) ([]csa.ChatMessage, 
 	values.Add("startTime", "1")
 	endpointURL.RawQuery = values.Encode()
 
-	req, err := s.teamsClient.ChatSvc().AuthenticatedRequest(http.MethodGet, endpointURL.String(), nil)
+	var lastErr error
+	for attempt := 1; attempt <= messageFetchMaxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		attemptCtx, cancel := context.WithTimeout(ctx, messageRequestTimeout)
+		messages, err := s.fetchMessagesOnce(attemptCtx, endpointURL.String())
+		cancel()
+		if err == nil {
+			return messages, nil
+		}
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
+
+		lastErr = err
+		if attempt == messageFetchMaxAttempts || !shouldRetryMessageFetch(err) {
+			return nil, err
+		}
+
+		s.logger.Warnf("retrying message fetch for %s after attempt %d/%d: %v", target.ID, attempt, messageFetchMaxAttempts, err)
+		if err := s.waitForMessageFetchRetry(ctx, attempt); err != nil {
+			return nil, err
+		}
+	}
+
+	return nil, lastErr
+}
+
+func (s *AppState) fetchMessagesOnce(ctx context.Context, endpoint string) ([]csa.ChatMessage, error) {
+	req, err := s.teamsClient.ChatSvc().AuthenticatedRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
+	req = req.WithContext(ctx)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := s.httpClient
+	if client == nil {
+		client = newMessageHTTPClient()
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1228,10 +1565,11 @@ func (s *AppState) fetchMessages(target ConversationTarget) ([]csa.ChatMessage, 
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		if len(bodyBytes) == 0 {
-			return nil, fmt.Errorf("unable to fetch messages: unexpected status %s", resp.Status)
+		return nil, &messageFetchStatusError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Body:       strings.TrimSpace(string(bodyBytes)),
 		}
-		return nil, fmt.Errorf("unable to fetch messages: unexpected status %s: %s", resp.Status, strings.TrimSpace(string(bodyBytes)))
 	}
 
 	var msgResponse csa.MessagesResponse
