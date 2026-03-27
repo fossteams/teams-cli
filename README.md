@@ -49,7 +49,18 @@ Tagged releases now publish tarballs and checksums for:
 - Linux x86_64: `teams-cli_<VERSION>_linux_amd64.tar.gz`
 - Linux arm64: `teams-cli_<VERSION>_linux_arm64.tar.gz`
 
-Each release also includes `teams-cli_<VERSION>_checksums.txt`.
+Each release also includes:
+
+- `teams-cli_<VERSION>_checksums.txt`
+- per-archive SPDX SBOMs such as `teams-cli_<VERSION>_linux_amd64.spdx.json`
+- keyless cosign signature materials such as:
+  - `teams-cli_<VERSION>_linux_amd64.tar.gz.sig`
+  - `teams-cli_<VERSION>_linux_amd64.tar.gz.sigstore.json`
+  - `teams-cli_<VERSION>_checksums.txt.sig`
+  - `teams-cli_<VERSION>_checksums.txt.sigstore.json`
+- GitHub provenance bundles:
+  - `teams-cli_<VERSION>_artifacts.provenance.bundle.json`
+  - `teams-cli_<VERSION>_checksums.provenance.bundle.json`
 
 ## Install From Release
 
@@ -66,6 +77,23 @@ grep " teams-cli_${VERSION}_darwin_arm64.tar.gz$" "teams-cli_${VERSION}_checksum
 tar -xzf "teams-cli_${VERSION}_darwin_arm64.tar.gz"
 install -m 0755 teams-cli /usr/local/bin/teams-cli
 teams-cli --version
+```
+
+To verify a release archive with the bundled keyless signature:
+
+```bash
+cosign verify-blob "teams-cli_${VERSION}_darwin_arm64.tar.gz" \
+  --bundle "teams-cli_${VERSION}_darwin_arm64.tar.gz.sigstore.json" \
+  --certificate-identity "https://github.com/vaishnavucv/teams-cli/.github/workflows/ci-release.yml@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+To verify GitHub build provenance for the same archive:
+
+```bash
+gh attestation verify "teams-cli_${VERSION}_darwin_arm64.tar.gz" \
+  --repo vaishnavucv/teams-cli \
+  --signer-workflow vaishnavucv/teams-cli/.github/workflows/ci-release.yml
 ```
 
 Example for Linux x86_64:
@@ -174,6 +202,8 @@ Releases now come from `main`, not from pushed tags.
 2. When the next release is ready, change `version.go` to the next version such as `v0.2.1` and update [CHANGELOG.md](./CHANGELOG.md).
 3. Merge or push that versioned change to `main`.
 4. The combined GitHub Actions workflow runs CI and, on successful `main` pushes, creates the GitHub release and tag automatically.
+5. Release assets now include tarballs, checksums, per-archive SPDX SBOMs,
+   keyless cosign signatures, and GitHub provenance bundles.
 
 ## Support
 

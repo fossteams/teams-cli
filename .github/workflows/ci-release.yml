@@ -18,6 +18,7 @@ permissions:
 env:
   COVERAGE_MIN: "25.0"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SYFT_VERSION: "v1.42.3"
 
 concurrency:
   group: ci-release-${{ github.ref }}
@@ -269,6 +270,9 @@ jobs:
     if: needs.metadata.outputs.should_release == 'true'
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v5
 
@@ -278,8 +282,39 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Install syft
+        run: go install github.com/anchore/syft/cmd/syft@${SYFT_VERSION}
+
       - name: Build archives and checksums
         run: ./scripts/build-release-artifacts.sh "${{ needs.metadata.outputs.version }}"
+
+      - name: Generate per-archive SBOMs
+        run: ./scripts/generate-release-sboms.sh "${{ needs.metadata.outputs.version }}"
+
+      - name: Sign release archives and checksum file
+        run: ./scripts/sign-release-assets.sh "${{ needs.metadata.outputs.version }}"
+
+      - name: Attest release archive provenance
+        id: attest_archives
+        uses: actions/attest@v4
+        with:
+          subject-checksums: dist/teams-cli_${{ needs.metadata.outputs.version }}_checksums.txt
+
+      - name: Attest checksum file provenance
+        id: attest_checksums
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/teams-cli_${{ needs.metadata.outputs.version }}_checksums.txt
+
+      - name: Collect provenance bundles
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          cp "${{ steps.attest_archives.outputs.bundle-path }}" "dist/teams-cli_${RELEASE_VERSION}_artifacts.provenance.bundle.json"
+          cp "${{ steps.attest_checksums.outputs.bundle-path }}" "dist/teams-cli_${RELEASE_VERSION}_checksums.provenance.bundle.json"
 
       - name: Upload release bundle artifact
         uses: actions/upload-artifact@v6
@@ -288,6 +323,10 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*_checksums.txt
+            dist/*.spdx.json
+            dist/*.sig
+            dist/*.sigstore.json
+            dist/*_provenance.bundle.json
 
       - name: Publish GitHub release
         env:
@@ -302,6 +341,10 @@ jobs:
           gh release create "${RELEASE_VERSION}" \
             dist/*.tar.gz \
             dist/*_checksums.txt \
+            dist/*.spdx.json \
+            dist/*.sig \
+            dist/*.sigstore.json \
+            dist/*_provenance.bundle.json \
             --generate-notes \
             --target "${GITHUB_SHA}" \
             "${args[@]}"
