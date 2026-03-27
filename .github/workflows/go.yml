@@ -46,10 +46,12 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 
       - name: Run staticcheck
-        run: "$(go env GOPATH)/bin/staticcheck" ./...
+        run: |
+          "$(go env GOPATH)/bin/staticcheck" ./...
 
       - name: Run govulncheck
-        run: "$(go env GOPATH)/bin/govulncheck" ./...
+        run: |
+          "$(go env GOPATH)/bin/govulncheck" ./...
 
   build-test:
     name: Build and Test (${{ matrix.os }})
