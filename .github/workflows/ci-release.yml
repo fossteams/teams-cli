@@ -338,18 +338,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
         run: |
+          shopt -s nullglob
+
           args=()
           if [[ "${RELEASE_VERSION}" == *-* ]]; then
             args+=(--prerelease)
           fi
 
-          gh release create "${RELEASE_VERSION}" \
-            dist/*.tar.gz \
-            dist/*_checksums.txt \
-            dist/*.spdx.json \
-            dist/*.sig \
-            dist/*.sigstore.json \
-            dist/*.provenance.bundle.json \
-            --generate-notes \
-            --target "${GITHUB_SHA}" \
-            "${args[@]}"
+          if gh release view "${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Reusing existing release ${RELEASE_VERSION}."
+          else
+            gh release create "${RELEASE_VERSION}" \
+              --generate-notes \
+              --target "${GITHUB_SHA}" \
+              "${args[@]}"
+          fi
+
+          assets=(
+            dist/*.tar.gz
+            dist/*_checksums.txt
+            dist/*.spdx.json
+            dist/*.sig
+            dist/*.sigstore.json
+            dist/*.provenance.bundle.json
+          )
+
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo "No release assets found to upload." >&2
+            exit 1
+          fi
+
+          for asset in "${assets[@]}"; do
+            gh release upload "${RELEASE_VERSION}" "${asset}" --clobber
+          done
