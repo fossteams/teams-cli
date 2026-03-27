@@ -54,10 +54,8 @@ Each release also includes:
 
 - `teams-cli_<VERSION>_checksums.txt`
 - per-archive SPDX SBOMs such as `teams-cli_<VERSION>_linux_amd64.spdx.json`
-- keyless cosign signature materials such as:
-  - `teams-cli_<VERSION>_linux_amd64.tar.gz.sig`
+- keyless cosign signature bundles such as:
   - `teams-cli_<VERSION>_linux_amd64.tar.gz.sigstore.json`
-  - `teams-cli_<VERSION>_checksums.txt.sig`
   - `teams-cli_<VERSION>_checksums.txt.sigstore.json`
 - GitHub provenance bundles:
   - `teams-cli_<VERSION>_artifacts.provenance.bundle.json`

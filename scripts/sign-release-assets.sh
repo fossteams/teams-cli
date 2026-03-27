@@ -27,15 +27,14 @@ if [[ ${#subjects[@]} -eq 0 ]]; then
 fi
 
 for subject in "${subjects[@]}"; do
-  sig_path="${subject}.sig"
   bundle_path="${subject}.sigstore.json"
 
   cosign sign-blob \
     --oidc-provider github-actions \
     --bundle "${bundle_path}" \
     --yes \
-    "${subject}" > "${sig_path}"
+    "${subject}" >/dev/null
 done
 
 echo "generated signatures:"
-printf '  %s\n' "${OUT_DIR}"/teams-cli_"${VERSION}"_*.sig "${OUT_DIR}"/teams-cli_"${VERSION}"_*.sigstore.json
+printf '  %s\n' "${OUT_DIR}"/teams-cli_"${VERSION}"_*.sigstore.json

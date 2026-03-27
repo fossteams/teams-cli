@@ -329,9 +329,8 @@ jobs:
             dist/*.tar.gz
             dist/*_checksums.txt
             dist/*.spdx.json
-            dist/*.sig
             dist/*.sigstore.json
-            dist/*_provenance.bundle.json
+            dist/*.provenance.bundle.json
 
       - name: Publish GitHub release
         env:
@@ -343,13 +342,13 @@ jobs:
             args+=(--prerelease)
           fi
 
-          gh release create "${RELEASE_VERSION}" \
-            dist/*.tar.gz \
-            dist/*_checksums.txt \
-            dist/*.spdx.json \
-            dist/*.sig \
-            dist/*.sigstore.json \
-            dist/*_provenance.bundle.json \
-            --generate-notes \
-            --target "${GITHUB_SHA}" \
-            "${args[@]}"
+          if gh release view "${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "Reusing existing release ${RELEASE_VERSION}."
+          else
+            gh release create "${RELEASE_VERSION}" \
+              --generate-notes \
+              --target "${GITHUB_SHA}" \
+              "${args[@]}"
+          fi
+
+          ./scripts/upload-release-assets.sh "${RELEASE_VERSION}"
