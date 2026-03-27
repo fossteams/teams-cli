@@ -7,6 +7,13 @@ this repository.
 
 ## [Unreleased]
 
+### Changed
+
+- Future release runs now publish through the GitHub CLI in workflow steps
+  instead of the deprecated Node 20 release action
+- The release workflow artifact upload step now uses the current
+  `actions/upload-artifact` major
+
 ## [v0.2.0] - 2026-03-27
 
 ### Added

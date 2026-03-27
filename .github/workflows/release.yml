@@ -39,7 +39,7 @@ jobs:
         run: ./scripts/build-release-artifacts.sh "${{ steps.version.outputs.value }}"
 
       - name: Upload release bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-${{ steps.version.outputs.value }}
           path: |
@@ -48,11 +48,20 @@ jobs:
 
       - name: Publish GitHub release
         if: github.event_name == 'push' && github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.tar.gz
-            dist/*_checksums.txt
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          prerelease: ${{ contains(steps.version.outputs.value, '-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if gh release view "${RELEASE_VERSION}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_VERSION}" \
+              dist/*.tar.gz \
+              dist/*_checksums.txt \
+              --clobber
+          else
+            gh release create "${RELEASE_VERSION}" \
+              dist/*.tar.gz \
+              dist/*_checksums.txt \
+              --generate-notes \
+              --verify-tag \
+              $(if [[ "${RELEASE_VERSION}" == *-* ]]; then echo --prerelease; fi)
+          fi
