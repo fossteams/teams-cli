@@ -48,6 +48,12 @@ go run ./ msg=20
 go run ./ --msg=20
 ```
 
+To inspect the available runtime flags:
+
+```bash
+go run ./ --help
+```
+
 To build and run the local binary:
 
 ```bash
@@ -57,6 +63,24 @@ TERM=xterm-256color ./teams-cli msg=20
 
 The app reads your Teams JWT files from `~/.config/fossteams`. Keep those token
 files outside this repository and do not commit them.
+
+Additional runtime options:
+
+- `--log-level <level>`: configure log verbosity (`debug`, `info`, `warn`, `error`)
+- `--token-dir <dir>`: read Teams JWT files from a custom directory instead of the default location
+- `--refresh-messages <duration>`: override the selected-conversation polling interval
+- `--refresh-tree <duration>`: override the conversation-tree polling interval
+- `--no-live`: disable background refresh polling entirely
+- `doctor`: run diagnostics for tokens, refresh configuration, terminal support, and Microsoft endpoint reachability
+
+Examples:
+
+```bash
+go run ./ --token-dir ~/.config/fossteams --log-level debug --msg 50
+go run ./ --refresh-messages 10s --refresh-tree 30s
+go run ./ --no-live
+go run ./ doctor --token-dir ~/.config/fossteams
+```
 
 ## Contributing
 
@@ -74,10 +98,12 @@ repository.
 - Loads messages automatically when you move onto a channel or chat
 - Limits the message view to the most recent `N` messages
 - Shows a live loading indicator while messages are being fetched
-- Refreshes the selected conversation every 5 seconds
-- Refreshes the conversation tree every 15 seconds
+- Refreshes the selected conversation every 5 seconds by default
+- Refreshes the conversation tree every 15 seconds by default
+- Allows refresh polling to be tuned or disabled from the CLI
 - Keeps Teams, Channels, and Chats in a stable order while refreshing
 - Displays a keyboard help overlay directly inside the TUI
+- Includes a `doctor` mode for local configuration and connectivity checks
 
 ## Runtime Behavior
 
@@ -99,6 +125,7 @@ Chats and channels are sorted to make browsing more predictable:
 This repository should not contain your local Teams tokens.
 
 - `teams-cli` reads tokens from `~/.config/fossteams`
+- `--token-dir` can be used to point at another token directory when needed
 - Local JWT artifacts are ignored by `.gitignore`
 - Do not copy token files into this repository before building or testing
 

@@ -31,11 +31,24 @@ To limit the number of loaded messages per conversation:
 TERM=xterm-256color go run ./ msg=20
 ```
 
+To inspect the runtime configuration surface:
+
+```bash
+go run ./ --help
+```
+
+To run local diagnostics:
+
+```bash
+go run ./ doctor
+```
+
 ## Token Handling
 
 Keep JWT files out of the repository.
 
 - The app reads tokens from `~/.config/fossteams`
+- `--token-dir` can be used when token files live elsewhere
 - Do not copy token files into this repository
 - Do not commit `.jwt` files or local auth artifacts
 
@@ -44,8 +57,9 @@ Keep JWT files out of the repository.
 1. Create a branch from `master`.
 2. Keep changes scoped and explain the user-visible behavior.
 3. Run `go build ./...` and `go test ./...`.
-4. Update `README.md` when behavior, controls, or runtime options change.
-5. Open the pull request against this repository's `master` branch.
+4. Run `go run ./ doctor` when changing token loading, refresh behavior, or startup configuration.
+5. Update `README.md` when behavior, controls, or runtime options change.
+6. Open the pull request against this repository's `master` branch.
 
 ## Change Guidelines
 

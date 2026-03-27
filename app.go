@@ -33,39 +33,42 @@ type AppState struct {
 	cancel context.CancelFunc
 
 	TeamsState
-	components               map[string]tview.Primitive
-	loadSeq                  uint64
-	activeLoadSeq            uint64
-	messageLimit             int
-	focusedComponent         string
-	previousFocus            string
-	chatPaneFocusable        bool
-	httpClient               *http.Client
-	stateMu                  sync.RWMutex
-	currentConversation      ConversationTarget
-	currentConversationSet   bool
-	currentMessagesSignature string
-	lastMessageSyncAt        time.Time
-	liveLoopStarted          uint32
-	liveMessageRefreshActive uint32
-	liveTreeRefreshActive    uint32
-	loadCancelMu             sync.Mutex
-	activeLoadCancel         context.CancelFunc
-	activeLoadCancelSeq      uint64
-	shutdownOnce             sync.Once
+	components                   map[string]tview.Primitive
+	loadSeq                      uint64
+	activeLoadSeq                uint64
+	messageLimit                 int
+	focusedComponent             string
+	previousFocus                string
+	chatPaneFocusable            bool
+	httpClient                   *http.Client
+	liveRefreshDisabled          bool
+	liveMessageRefreshEvery      time.Duration
+	liveConversationRefreshEvery time.Duration
+	stateMu                      sync.RWMutex
+	currentConversation          ConversationTarget
+	currentConversationSet       bool
+	currentMessagesSignature     string
+	lastMessageSyncAt            time.Time
+	liveLoopStarted              uint32
+	liveMessageRefreshActive     uint32
+	liveTreeRefreshActive        uint32
+	loadCancelMu                 sync.Mutex
+	activeLoadCancel             context.CancelFunc
+	activeLoadCancelSeq          uint64
+	shutdownOnce                 sync.Once
 }
 
 const (
-	loadingBarWidth                 = 18
-	loadingPulseWidth               = 5
-	loadingTickInterval             = 120 * time.Millisecond
-	helpBarHeight                   = 1
-	liveMessageRefreshInterval      = 5 * time.Second
-	liveConversationRefreshInterval = 15 * time.Second
-	messageRequestTimeout           = 5 * time.Second
-	messageFetchMaxAttempts         = 3
-	messageFetchRetryBaseDelay      = 250 * time.Millisecond
-	messageFetchRetryMaxDelay       = time.Second
+	loadingBarWidth                        = 18
+	loadingPulseWidth                      = 5
+	loadingTickInterval                    = 120 * time.Millisecond
+	helpBarHeight                          = 1
+	defaultLiveMessageRefreshInterval      = 5 * time.Second
+	defaultLiveConversationRefreshInterval = 15 * time.Second
+	messageRequestTimeout                  = 5 * time.Second
+	messageFetchMaxAttempts                = 3
+	messageFetchRetryBaseDelay             = 250 * time.Millisecond
+	messageFetchRetryMaxDelay              = time.Second
 )
 
 type treeViewState struct {
@@ -332,7 +335,7 @@ func (s *AppState) createErrorView() tview.Primitive {
 func (s *AppState) createHelpPage() tview.Primitive {
 	helpText := tview.NewTextView()
 	helpText.SetDynamicColors(true)
-	helpText.SetText(keyboardHelpText())
+	helpText.SetText(s.keyboardHelpText())
 	helpText.SetWrap(true)
 	helpText.SetBorder(true)
 	helpText.SetTitle("Keyboard Help")
@@ -375,7 +378,7 @@ func (s *AppState) fillMainWindow() {
 
 		s.pages.SwitchToPage(PageMain)
 		s.focusComponent(TrChat)
-		if atomic.CompareAndSwapUint32(&s.liveLoopStarted, 0, 1) {
+		if s.liveRefreshEnabled() && atomic.CompareAndSwapUint32(&s.liveLoopStarted, 0, 1) {
 			go s.runLiveRefreshLoop()
 		}
 	})
@@ -744,9 +747,13 @@ func (s *AppState) renderConversationMessages(target ConversationTarget, message
 	previousCount := chatList.GetItemCount()
 	previousIndex := chatList.GetCurrentItem()
 	followTail := previousCount > 0 && previousIndex >= previousCount-1
+	status := ""
+	if !syncedAt.IsZero() {
+		status = s.conversationSyncStatus(syncedAt)
+	}
 
 	chatList.Clear()
-	chatList.SetTitle(conversationPaneTitle(target, syncedAt, "")).
+	chatList.SetTitle(conversationPaneTitle(target, time.Time{}, status)).
 		SetBorder(true).
 		SetTitleAlign(tview.AlignCenter)
 	s.chatPaneFocusable = true
@@ -781,15 +788,18 @@ func (s *AppState) updateConversationPaneTitle(target ConversationTarget, synced
 	if !ok {
 		return
 	}
+	if status == "" && !syncedAt.IsZero() {
+		status = s.conversationSyncStatus(syncedAt)
+	}
 
-	chatList.SetTitle(conversationPaneTitle(target, syncedAt, status)).
+	chatList.SetTitle(conversationPaneTitle(target, time.Time{}, status)).
 		SetBorder(true).
 		SetTitleAlign(tview.AlignCenter)
 }
 
 func (s *AppState) runLiveRefreshLoop() {
-	messageTicker := time.NewTicker(liveMessageRefreshInterval)
-	conversationTicker := time.NewTicker(liveConversationRefreshInterval)
+	messageTicker := time.NewTicker(s.messageRefreshInterval())
+	conversationTicker := time.NewTicker(s.conversationRefreshInterval())
 	defer messageTicker.Stop()
 	defer conversationTicker.Stop()
 
@@ -924,8 +934,9 @@ func (s *AppState) refreshConversationTree() {
 	})
 }
 
-func keyboardHelpText() string {
-	return strings.TrimSpace(`
+func (s *AppState) keyboardHelpText() string {
+	if !s.liveRefreshEnabled() {
+		return strings.TrimSpace(`
 Tree   Up/Down move   Right/l open
        Left/h/Esc back   Enter read
        Tab msgs
@@ -933,11 +944,25 @@ Tree   Up/Down move   Right/l open
 Msgs   Up/Down move   PgUp/Dn page
        Home/End jump   Left/h/Esc/Tab back
 
-Live   Selected conversation refreshes every 5s
-       Conversation tree refreshes every 15s
+Live   Background refresh disabled
 
 ? help   q quit   Ctrl+C force quit
 `)
+	}
+
+	return strings.TrimSpace(fmt.Sprintf(`
+Tree   Up/Down move   Right/l open
+       Left/h/Esc back   Enter read
+       Tab msgs
+
+Msgs   Up/Down move   PgUp/Dn page
+       Home/End jump   Left/h/Esc/Tab back
+
+Live   Selected conversation refreshes every %s
+       Conversation tree refreshes every %s
+
+? help   q quit   Ctrl+C force quit
+`, s.messageRefreshInterval(), s.conversationRefreshInterval()))
 }
 
 func helpBarText(focusedComponent string) string {
@@ -1028,6 +1053,9 @@ func (s *AppState) updateHelpBar() {
 	}
 
 	helpView.(*tview.TextView).SetText(helpBarText(s.focusedComponent))
+	if helpModal, ok := s.components[MoHelp].(*tview.TextView); ok {
+		helpModal.SetText(s.keyboardHelpText())
+	}
 }
 
 func (s *AppState) updatePanelFocus() {
@@ -1317,6 +1345,37 @@ func loadingStatusText(limit int, startedAt time.Time, step int) (string, string
 	mainText := fmt.Sprintf("Loading last %d messages %s", limit, loadingBarFrame(step, loadingBarWidth))
 	secondaryText := fmt.Sprintf("Fetching recent messages from Teams... %ds", elapsedSeconds)
 	return mainText, secondaryText
+}
+
+func (s *AppState) liveRefreshEnabled() bool {
+	return !s.liveRefreshDisabled
+}
+
+func (s *AppState) messageRefreshInterval() time.Duration {
+	if s.liveMessageRefreshEvery > 0 {
+		return s.liveMessageRefreshEvery
+	}
+
+	return defaultLiveMessageRefreshInterval
+}
+
+func (s *AppState) conversationRefreshInterval() time.Duration {
+	if s.liveConversationRefreshEvery > 0 {
+		return s.liveConversationRefreshEvery
+	}
+
+	return defaultLiveConversationRefreshInterval
+}
+
+func (s *AppState) conversationSyncStatus(syncedAt time.Time) string {
+	if syncedAt.IsZero() {
+		return ""
+	}
+	if s.liveRefreshEnabled() {
+		return "live " + syncedAt.Format("15:04:05")
+	}
+
+	return "loaded " + syncedAt.Format("15:04:05")
 }
 
 func loadingBarFrame(step, width int) string {
