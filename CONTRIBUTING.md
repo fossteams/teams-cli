@@ -49,6 +49,12 @@ To run local diagnostics:
 go run ./ doctor
 ```
 
+To build release archives locally:
+
+```bash
+./scripts/build-release-artifacts.sh v0.1.0-test
+```
+
 ## Token Handling
 
 Keep JWT files out of the repository.
@@ -67,6 +73,13 @@ Keep JWT files out of the repository.
 4. Run `go run ./ doctor` when changing token loading, refresh behavior, startup configuration, or logging behavior.
 5. Update `README.md` when behavior, controls, or runtime options change.
 6. Open the pull request against this repository's `master` branch.
+
+## Release Process
+
+- Push a tag like `v0.1.0` on `master` to trigger the release workflow
+- The release workflow builds tarballs for darwin/linux on amd64/arm64
+- Each release publishes a versioned checksums file alongside the archives
+- `workflow_dispatch` can be used to build a snapshot bundle without publishing a tagged release
 
 ## Change Guidelines
 

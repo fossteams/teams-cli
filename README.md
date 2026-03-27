@@ -34,8 +34,46 @@ Today the client is primarily read-only:
 
 Follow the instructions on how to obtain tokens with
 [teams-token](https://github.com/fossteams/teams-token), then run the app.
-Binary releases will appear on this repository as soon as we have a product
-with more features.
+Tagged releases now publish tarballs and checksums for:
+
+- macOS Apple Silicon: `teams-cli_<VERSION>_darwin_arm64.tar.gz`
+- macOS Intel: `teams-cli_<VERSION>_darwin_amd64.tar.gz`
+- Linux x86_64: `teams-cli_<VERSION>_linux_amd64.tar.gz`
+- Linux arm64: `teams-cli_<VERSION>_linux_arm64.tar.gz`
+
+Each release also includes `teams-cli_<VERSION>_checksums.txt`.
+
+## Install From Release
+
+Replace `<VERSION>` with a real tag such as `v0.1.0`, then download the archive
+that matches your machine plus the checksum file from the release page.
+
+Example for macOS Apple Silicon:
+
+```bash
+VERSION=v0.1.0
+curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_darwin_arm64.tar.gz"
+curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_checksums.txt"
+grep " teams-cli_${VERSION}_darwin_arm64.tar.gz$" "teams-cli_${VERSION}_checksums.txt" | shasum -a 256 -c
+tar -xzf "teams-cli_${VERSION}_darwin_arm64.tar.gz"
+install -m 0755 teams-cli /usr/local/bin/teams-cli
+teams-cli --version
+```
+
+Example for Linux x86_64:
+
+```bash
+VERSION=v0.1.0
+curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_linux_amd64.tar.gz"
+curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_checksums.txt"
+grep " teams-cli_${VERSION}_linux_amd64.tar.gz$" "teams-cli_${VERSION}_checksums.txt" | shasum -a 256 -c
+tar -xzf "teams-cli_${VERSION}_linux_amd64.tar.gz"
+install -m 0755 teams-cli /usr/local/bin/teams-cli
+teams-cli --version
+```
+
+If `install` is not appropriate for your setup, extract the archive and move
+`teams-cli` to any directory already on your `PATH`.
 
 ```bash
 go run ./
