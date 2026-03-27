@@ -26,8 +26,9 @@ this repository.
   recovery
 - Refactored the TUI/runtime implementation into smaller files by concern
 - Raised the Go baseline to `1.26.1`
-- Fixed the CI workflow syntax, aligned CI with the current Go baseline, and
-  opted workflows into the Node 24 JavaScript action runtime
+- Fixed the CI workflow syntax, aligned CI with the current Go baseline,
+  upgraded GitHub Actions to current majors, and opted workflows into the Node
+  24 JavaScript action runtime
 - Clarified maintainer workflow, support paths, and module-path expectations
 
 ## [v0.1.0] - 2026-03-27
