@@ -329,7 +329,6 @@ jobs:
             dist/*.tar.gz
             dist/*_checksums.txt
             dist/*.spdx.json
-            dist/*.sig
             dist/*.sigstore.json
             dist/*.provenance.bundle.json
 
@@ -338,8 +337,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
         run: |
-          shopt -s nullglob
-
           args=()
           if [[ "${RELEASE_VERSION}" == *-* ]]; then
             args+=(--prerelease)
@@ -354,20 +351,4 @@ jobs:
               "${args[@]}"
           fi
 
-          assets=(
-            dist/*.tar.gz
-            dist/*_checksums.txt
-            dist/*.spdx.json
-            dist/*.sig
-            dist/*.sigstore.json
-            dist/*.provenance.bundle.json
-          )
-
-          if [[ ${#assets[@]} -eq 0 ]]; then
-            echo "No release assets found to upload." >&2
-            exit 1
-          fi
-
-          for asset in "${assets[@]}"; do
-            gh release upload "${RELEASE_VERSION}" "${asset}" --clobber
-          done
+          ./scripts/upload-release-assets.sh "${RELEASE_VERSION}"
