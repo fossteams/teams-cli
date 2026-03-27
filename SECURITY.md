@@ -76,8 +76,8 @@ review:
 - dependency review on pull requests
 - secret scanning in CI
 - protected `release` environment approval before publication
-- release smoke tests, SPDX SBOMs, keyless cosign signatures, and GitHub
-  provenance attestations for published release artifacts
+- release smoke tests, a bundled SPDX SBOM archive, a signed checksum file, and
+  GitHub provenance attestations for published release artifacts
 
 These checks reduce risk, but they do not replace careful review of token
 handling, request authentication, or release artifacts.
@@ -88,9 +88,9 @@ Consumers should prefer release assets that can be validated through all of the
 following:
 
 - checksum verification
-- cosign bundle verification against the GitHub Actions workflow identity
+- cosign bundle verification for the published checksum file
 - GitHub attestation verification for build provenance
-- SBOM review for the specific archive being installed
+- SBOM review using the bundled release SBOM archive
 
 If any of these materials are missing or fail validation, treat the release as
 suspect until it is reviewed.

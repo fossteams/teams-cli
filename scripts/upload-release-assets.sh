@@ -53,9 +53,8 @@ shopt -s nullglob
 assets=(
   "${OUT_DIR}"/teams-cli_"${VERSION}"_*.tar.gz
   "${OUT_DIR}"/teams-cli_"${VERSION}"_checksums.txt
-  "${OUT_DIR}"/teams-cli_"${VERSION}"_*.spdx.json
-  "${OUT_DIR}"/teams-cli_"${VERSION}"_*.sigstore.json
-  "${OUT_DIR}"/teams-cli_"${VERSION}"_*.provenance.bundle.json
+  "${OUT_DIR}"/teams-cli_"${VERSION}"_checksums.txt.sigstore.json
+  "${OUT_DIR}"/teams-cli_"${VERSION}"_sboms.tar.gz
 )
 
 if [[ ${#assets[@]} -eq 0 ]]; then

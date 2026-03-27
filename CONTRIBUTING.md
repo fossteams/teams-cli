@@ -108,7 +108,7 @@ The maintained fork now treats `dev` and `main` as protected branches.
 - Pushing the versioned commit to `main` triggers the combined CI and release workflow
 - The `Publish Release` job is gated by the protected `release` environment and requires manual approval before publication
 - Before publish, the workflow smoke-tests the built archives on the runner
-- After approval, the workflow generates SPDX SBOMs, signs release blobs with cosign keyless signing, creates GitHub provenance attestations, creates the tag, and publishes the GitHub release automatically
+- After approval, the workflow generates a bundled SPDX SBOM archive, signs the checksum file with a cosign keyless bundle, creates GitHub provenance attestations for release archives, creates the tag, and publishes the GitHub release automatically
 - After the release branch has landed, move `dev` back to `version = "dev"` for the next development cycle if needed
 
 ## Release Rollback
