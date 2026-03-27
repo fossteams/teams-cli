@@ -26,11 +26,12 @@ import (
 )
 
 type AppState struct {
-	app    *tview.Application
-	pages  *tview.Pages
-	logger *logrus.Logger
-	ctx    context.Context
-	cancel context.CancelFunc
+	app         *tview.Application
+	pages       *tview.Pages
+	logger      *logrus.Logger
+	logFilePath string
+	ctx         context.Context
+	cancel      context.CancelFunc
 
 	TeamsState
 	components                   map[string]tview.Primitive
@@ -127,8 +128,17 @@ func (s *AppState) appContext() context.Context {
 	return context.Background()
 }
 
+func (s *AppState) appLogger() *logrus.Logger {
+	if s != nil && s.logger != nil {
+		return s.logger
+	}
+
+	return discardLogger
+}
+
 func (s *AppState) requestStop() {
 	s.shutdownOnce.Do(func() {
+		s.appLogger().WithField("log_file", s.logFilePath).Info("shutdown requested")
 		s.cancelActiveLoad()
 		if s.cancel != nil {
 			s.cancel()
@@ -280,6 +290,7 @@ func (s *AppState) start() {
 	var err error
 	s.teamsClient, err = teams_api.New()
 	if err != nil {
+		s.appLogger().WithError(err).Error("unable to initialize teams client")
 		s.showError(err)
 		return
 	}
@@ -287,9 +298,15 @@ func (s *AppState) start() {
 	// Initialize Teams State
 	err = s.TeamsState.init(s.teamsClient)
 	if err != nil {
+		s.appLogger().WithError(err).Error("unable to initialize teams state")
 		s.showError(err)
 		return
 	}
+
+	s.appLogger().WithFields(logrus.Fields{
+		"teams_count": len(s.conversations.Teams),
+		"chat_count":  len(s.conversations.Chats),
+	}).Info("teams state initialized")
 
 	select {
 	case <-s.appContext().Done():
@@ -301,13 +318,19 @@ func (s *AppState) start() {
 }
 
 func (s *AppState) showError(err error) {
+	s.appLogger().WithError(err).WithField("log_file", s.logFilePath).Error("showing error view")
+
 	val, ok := s.components[TvError]
 	if !ok {
-		s.logger.Errorf("unable to show error on screen: %v", err)
+		s.appLogger().WithError(err).Error("error view is unavailable")
 		return
 	}
 	s.app.QueueUpdateDraw(func() {
-		val.(*tview.TextView).SetText(err.Error())
+		message := err.Error()
+		if strings.TrimSpace(s.logFilePath) != "" {
+			message += "\n\nSee log: " + s.logFilePath
+		}
+		val.(*tview.TextView).SetText(message)
 		s.pages.SwitchToPage(PageError)
 	})
 }
@@ -379,6 +402,10 @@ func (s *AppState) fillMainWindow() {
 		s.pages.SwitchToPage(PageMain)
 		s.focusComponent(TrChat)
 		if s.liveRefreshEnabled() && atomic.CompareAndSwapUint32(&s.liveLoopStarted, 0, 1) {
+			s.appLogger().WithFields(logrus.Fields{
+				"message_refresh":      s.messageRefreshInterval().String(),
+				"conversation_refresh": s.conversationRefreshInterval().String(),
+			}).Info("starting live refresh loop")
 			go s.runLiveRefreshLoop()
 		}
 	})
@@ -802,6 +829,7 @@ func (s *AppState) runLiveRefreshLoop() {
 	conversationTicker := time.NewTicker(s.conversationRefreshInterval())
 	defer messageTicker.Stop()
 	defer conversationTicker.Stop()
+	defer s.appLogger().Debug("live refresh loop stopped")
 
 	for {
 		select {
@@ -848,7 +876,10 @@ func (s *AppState) refreshSelectedConversationMessages() {
 		if errors.Is(err, context.Canceled) {
 			return
 		}
-		s.logger.Warnf("live message refresh failed for %s: %v", target.ID, err)
+		s.appLogger().WithFields(logrus.Fields{
+			"conversation_id":    target.ID,
+			"conversation_title": target.Title,
+		}).WithError(err).Warn("live message refresh failed")
 		s.app.QueueUpdateDraw(func() {
 			select {
 			case <-s.appContext().Done():
@@ -897,7 +928,7 @@ func (s *AppState) refreshConversationTree() {
 
 	data, err := s.fetchConversationData()
 	if err != nil {
-		s.logger.Warnf("live conversation refresh failed: %v", err)
+		s.appLogger().WithError(err).Warn("live conversation refresh failed")
 		return
 	}
 
@@ -1410,16 +1441,32 @@ func (s *AppState) loadMessages(ctx context.Context, target ConversationTarget, 
 	defer close(done)
 	defer s.clearActiveLoadCancel(loadSeq)
 
+	s.appLogger().WithFields(logrus.Fields{
+		"conversation_id":    target.ID,
+		"conversation_title": target.Title,
+		"message_limit":      s.messageLimit,
+		"load_seq":           loadSeq,
+	}).Debug("loading conversation messages")
+
 	messages, err := s.fetchMessages(ctx, target)
 
 	if err != nil {
 		atomic.CompareAndSwapUint64(&s.activeLoadSeq, loadSeq, 0)
 		if errors.Is(err, context.Canceled) {
+			s.appLogger().WithFields(logrus.Fields{
+				"conversation_id": target.ID,
+				"load_seq":        loadSeq,
+			}).Debug("conversation message load cancelled")
 			return
 		}
 		if atomic.LoadUint64(&s.loadSeq) != loadSeq {
 			return
 		}
+		s.appLogger().WithFields(logrus.Fields{
+			"conversation_id":    target.ID,
+			"conversation_title": target.Title,
+			"load_seq":           loadSeq,
+		}).WithError(err).Warn("conversation message load failed")
 		s.app.QueueUpdateDraw(func() {
 			select {
 			case <-s.appContext().Done():
@@ -1444,6 +1491,12 @@ func (s *AppState) loadMessages(ctx context.Context, target ConversationTarget, 
 	atomic.CompareAndSwapUint64(&s.activeLoadSeq, loadSeq, 0)
 	syncedAt := time.Now()
 	signature := messagesSignature(messages)
+	s.appLogger().WithFields(logrus.Fields{
+		"conversation_id":    target.ID,
+		"conversation_title": target.Title,
+		"message_count":      len(messages),
+		"load_seq":           loadSeq,
+	}).Debug("conversation messages loaded")
 	s.app.QueueUpdateDraw(func() {
 		select {
 		case <-s.appContext().Done():
@@ -1574,6 +1627,12 @@ func (s *AppState) fetchMessages(ctx context.Context, target ConversationTarget)
 	values.Add("startTime", "1")
 	endpointURL.RawQuery = values.Encode()
 
+	s.appLogger().WithFields(logrus.Fields{
+		"conversation_id":    target.ID,
+		"conversation_title": target.Title,
+		"message_limit":      s.messageLimit,
+	}).Debug("fetching conversation messages")
+
 	var lastErr error
 	for attempt := 1; attempt <= messageFetchMaxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -1595,7 +1654,12 @@ func (s *AppState) fetchMessages(ctx context.Context, target ConversationTarget)
 			return nil, err
 		}
 
-		s.logger.Warnf("retrying message fetch for %s after attempt %d/%d: %v", target.ID, attempt, messageFetchMaxAttempts, err)
+		s.appLogger().WithFields(logrus.Fields{
+			"conversation_id": target.ID,
+			"attempt":         attempt,
+			"max_attempts":    messageFetchMaxAttempts,
+			"backoff":         messageFetchBackoff(attempt).String(),
+		}).WithError(err).Warn("retrying message fetch")
 		if err := s.waitForMessageFetchRetry(ctx, attempt); err != nil {
 			return nil, err
 		}

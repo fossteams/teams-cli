@@ -45,6 +45,8 @@ func parseAppOptions(args []string) (AppOptions, error) {
 			options.ShowHelp = true
 		case arg == "--version":
 			options.ShowVersion = true
+		case arg == "--debug":
+			options.LogLevel = logrus.DebugLevel
 		case arg == "--no-live":
 			options.LiveRefresh = false
 		case strings.HasPrefix(arg, "msg="):
@@ -185,6 +187,7 @@ func usageText(program string) string {
 
 Options:
   -h, --help                  Show this help text
+      --debug                 Shortcut for --log-level debug
       --version               Show version information
       --msg <count>           Limit each conversation to the most recent N messages
       --log-level <level>     Set log level (debug, info, warn, error)
@@ -196,7 +199,7 @@ Options:
 
 Examples:
   %s --msg 20
-  %s --token-dir ~/.config/fossteams --log-level debug
+  %s --token-dir ~/.config/fossteams --debug
   %s doctor --token-dir ~/.config/fossteams
 `, program, program, defaultLiveMessageRefreshInterval, defaultLiveConversationRefreshInterval, program, program, program)
 }

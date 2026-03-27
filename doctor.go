@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fossteams/teams-api/pkg/csa"
+	"github.com/sirupsen/logrus"
 )
 
 type doctorStatus string
@@ -37,6 +38,7 @@ func runDoctor(out io.Writer, options AppOptions) error {
 	}
 
 	checks = append(checks, doctorTerminalCheck())
+	checks = append(checks, doctorLogFileCheck())
 	checks = append(checks, doctorRefreshConfigChecks(options)...)
 	checks = append(checks, doctorTokenChecks(options)...)
 	checks = append(checks, doctorNetworkChecks()...)
@@ -95,13 +97,40 @@ func doctorRefreshConfigChecks(options AppOptions) []doctorCheck {
 		{
 			Status:  doctorPass,
 			Name:    "Options",
-			Details: fmt.Sprintf("msg=%d, log-level=%s, token-dir=%s", options.MessageLimit, options.LogLevel.String(), tokenDir),
+			Details: fmt.Sprintf("msg=%d, log-level=%s, token-dir=%s, debug=%t", options.MessageLimit, options.LogLevel.String(), tokenDir, options.LogLevel == logrus.DebugLevel),
 		},
 		{
 			Status:  status,
 			Name:    "Live Refresh",
 			Details: liveDetails,
 		},
+	}
+}
+
+func doctorLogFileCheck() doctorCheck {
+	logPath, err := defaultLogFilePath()
+	if err != nil {
+		return doctorCheck{
+			Status:  doctorFail,
+			Name:    "Logs",
+			Details: err.Error(),
+		}
+	}
+
+	logFile, err := openStructuredLogFile(logPath)
+	if err != nil {
+		return doctorCheck{
+			Status:  doctorFail,
+			Name:    "Logs",
+			Details: fmt.Sprintf("unable to open %s: %v", logPath, err),
+		}
+	}
+	_ = logFile.Close()
+
+	return doctorCheck{
+		Status:  doctorPass,
+		Name:    "Logs",
+		Details: fmt.Sprintf("structured logs enabled at %s", logPath),
 	}
 }
 

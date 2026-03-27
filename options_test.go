@@ -33,7 +33,7 @@ func TestParseAppOptionsDefaults(t *testing.T) {
 func TestParseAppOptionsExtendedFlags(t *testing.T) {
 	options, err := parseAppOptions([]string{
 		"--msg", "25",
-		"--log-level=debug",
+		"--debug",
 		"--token-dir", "/tmp/tokens",
 		"--refresh-messages", "10",
 		"--refresh-tree=45s",
@@ -89,6 +89,17 @@ func TestParseAppOptionsHelpAndVersion(t *testing.T) {
 	}
 	if !options.ShowVersion {
 		t.Fatal("expected version mode")
+	}
+}
+
+func TestParseAppOptionsDebugFlagCanBeOverridden(t *testing.T) {
+	options, err := parseAppOptions([]string{"--debug", "--log-level", "error"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if options.LogLevel != logrus.ErrorLevel {
+		t.Fatalf("expected error log level, got %s", options.LogLevel)
 	}
 }
 

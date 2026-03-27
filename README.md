@@ -73,6 +73,7 @@ files outside this repository and do not commit them.
 
 Additional runtime options:
 
+- `--debug`: shortcut for `--log-level debug`
 - `--log-level <level>`: configure log verbosity (`debug`, `info`, `warn`, `error`)
 - `--token-dir <dir>`: read Teams JWT files from a custom directory instead of the default location
 - `--refresh-messages <duration>`: override the selected-conversation polling interval
@@ -84,7 +85,7 @@ Additional runtime options:
 Examples:
 
 ```bash
-go run ./ --token-dir ~/.config/fossteams --log-level debug --msg 50
+go run ./ --token-dir ~/.config/fossteams --debug --msg 50
 go run ./ --refresh-messages 10s --refresh-tree 30s
 go run ./ --no-live
 go run ./ --version
@@ -113,6 +114,8 @@ repository.
 - Keeps Teams, Channels, and Chats in a stable order while refreshing
 - Cancels stale message loads when you switch conversations
 - Stops cleanly on `q`, `Ctrl+C`, or `SIGTERM`
+- Writes structured JSON logs to a user-local log file
+- Supports `--debug` and structured runtime error logging
 - Displays a keyboard help overlay directly inside the TUI
 - Includes a `doctor` mode for local configuration and connectivity checks
 
@@ -129,6 +132,23 @@ leaving background work running.
   failures
 - Fetch errors stay inline inside the messages pane so the TUI remains usable
   and the next refresh or manual selection can recover
+- Early startup failures are logged and printed with a `See log:` path so the
+  error is inspectable after the process exits
+
+## Observability
+
+The CLI now keeps structured JSON logs on disk instead of relying on transient
+terminal output.
+
+- `--debug` raises the logger to debug level without changing any other runtime
+  flags
+- Logs are written to a user-local file:
+  - macOS: `~/Library/Logs/teams-cli/teams-cli.log`
+  - Linux: `$XDG_STATE_HOME/teams-cli/teams-cli.log` or `~/.local/state/teams-cli/teams-cli.log`
+- Log entries are structured JSON so startup, refresh, retry, and failure events
+  are easier to inspect and parse
+- Sensitive values such as JWTs, auth headers, and token-like query values are
+  redacted before they are written
 
 ## Runtime Behavior
 
@@ -173,6 +193,7 @@ go run ./ doctor --token-dir ~/.config/fossteams --no-live
 `doctor` checks:
 
 - terminal support via `TERM`
+- log file path resolution and writability
 - current CLI refresh configuration
 - token directory accessibility
 - required runtime tokens and their expiry/claims
@@ -220,6 +241,7 @@ If everything goes well, you should see something like this:
 - Refreshing the selected conversation and conversation tree automatically
 - Tuning or disabling refresh intervals from the CLI
 - Canceling stale loads and shutting down cleanly
+- Writing structured local logs with redaction
 - Stable ordering for Teams, Channels, and Chats while refreshing
 - Keyboard-first navigation between conversations and messages
 - Running local diagnostics with `doctor`
