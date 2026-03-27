@@ -1,6 +1,6 @@
 module github.com/fossteams/teams-cli
 
-go 1.23.0
+go 1.26.1
 
 require (
 	github.com/fossteams/teams-api v0.0.0-20220604181459-dbbdc3681f32
