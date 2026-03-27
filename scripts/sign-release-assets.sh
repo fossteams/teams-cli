@@ -15,26 +15,19 @@ if ! command -v cosign >/dev/null 2>&1; then
   exit 1
 fi
 
-shopt -s nullglob
-subjects=(
-  "${OUT_DIR}"/teams-cli_"${VERSION}"_*.tar.gz
-  "${OUT_DIR}"/teams-cli_"${VERSION}"_checksums.txt
-)
-
-if [[ ${#subjects[@]} -eq 0 ]]; then
-  echo "no release artifacts found in ${OUT_DIR}" >&2
+subject="${OUT_DIR}/teams-cli_${VERSION}_checksums.txt"
+if [[ ! -f "${subject}" ]]; then
+  echo "missing checksum file in ${OUT_DIR}" >&2
   exit 1
 fi
 
-for subject in "${subjects[@]}"; do
-  bundle_path="${subject}.sigstore.json"
+bundle_path="${subject}.sigstore.json"
 
-  cosign sign-blob \
-    --oidc-provider github-actions \
-    --bundle "${bundle_path}" \
-    --yes \
-    "${subject}" >/dev/null
-done
+cosign sign-blob \
+  --oidc-provider github-actions \
+  --bundle "${bundle_path}" \
+  --yes \
+  "${subject}" >/dev/null
 
-echo "generated signatures:"
-printf '  %s\n' "${OUT_DIR}"/teams-cli_"${VERSION}"_*.sigstore.json
+echo "generated signature bundle:"
+printf '  %s\n' "${bundle_path}"

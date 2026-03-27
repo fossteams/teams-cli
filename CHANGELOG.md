@@ -7,6 +7,12 @@ this repository.
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified release assets to the standard consumer set: platform archives,
+  one checksums file, one checksum signature bundle, and one bundled SBOM
+  archive, while keeping GitHub attestations in the platform attestation store
+
 ## [v0.2.2] - 2026-03-27
 
 ### Added
@@ -14,7 +20,7 @@ this repository.
 - `CODEOWNERS` coverage for repository-critical paths
 - CodeQL, dependency-review, and secret-detection workflows for the maintained
   fork
-- Trusted release metadata generation for SBOMs, GitHub provenance bundles, and
+- Trusted release metadata generation for SBOMs, GitHub attestations, and
   cosign keyless signatures on release artifacts
 - Release archive smoke tests before publication
 - Governed release environment approval and documented rollback guidance

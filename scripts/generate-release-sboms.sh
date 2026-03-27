@@ -23,10 +23,16 @@ if [[ ${#archives[@]} -eq 0 ]]; then
   exit 1
 fi
 
+sbom_stage="$(mktemp -d "${TMPDIR:-/tmp}/teams-cli-sboms.XXXXXX")"
+trap 'rm -rf "${sbom_stage}"' EXIT
+
 for archive in "${archives[@]}"; do
-  sbom_path="${archive%.tar.gz}.spdx.json"
+  sbom_path="${sbom_stage}/$(basename "${archive%.tar.gz}.spdx.json")"
   syft "${archive}" -o "spdx-json=${sbom_path}"
 done
 
-echo "generated SBOMs:"
-printf '  %s\n' "${OUT_DIR}"/teams-cli_"${VERSION}"_*.spdx.json
+sbom_bundle="${OUT_DIR}/teams-cli_${VERSION}_sboms.tar.gz"
+tar -C "${sbom_stage}" -czf "${sbom_bundle}" .
+
+echo "generated SBOM bundle:"
+printf '  %s\n' "${sbom_bundle}"

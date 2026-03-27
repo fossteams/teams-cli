@@ -303,23 +303,9 @@ jobs:
         run: ./scripts/sign-release-assets.sh "${{ needs.metadata.outputs.version }}"
 
       - name: Attest release archive provenance
-        id: attest_archives
         uses: actions/attest@v4
         with:
           subject-checksums: dist/teams-cli_${{ needs.metadata.outputs.version }}_checksums.txt
-
-      - name: Attest checksum file provenance
-        id: attest_checksums
-        uses: actions/attest@v4
-        with:
-          subject-path: dist/teams-cli_${{ needs.metadata.outputs.version }}_checksums.txt
-
-      - name: Collect provenance bundles
-        env:
-          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-        run: |
-          cp "${{ steps.attest_archives.outputs.bundle-path }}" "dist/teams-cli_${RELEASE_VERSION}_artifacts.provenance.bundle.json"
-          cp "${{ steps.attest_checksums.outputs.bundle-path }}" "dist/teams-cli_${RELEASE_VERSION}_checksums.provenance.bundle.json"
 
       - name: Upload release bundle artifact
         uses: actions/upload-artifact@v6
@@ -328,9 +314,8 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*_checksums.txt
-            dist/*.spdx.json
-            dist/*.sigstore.json
-            dist/*.provenance.bundle.json
+            dist/*_checksums.txt.sigstore.json
+            dist/*_sboms.tar.gz
 
       - name: Publish GitHub release
         env:

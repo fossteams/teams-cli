@@ -53,13 +53,12 @@ Tagged releases now publish tarballs and checksums for:
 Each release also includes:
 
 - `teams-cli_<VERSION>_checksums.txt`
-- per-archive SPDX SBOMs such as `teams-cli_<VERSION>_linux_amd64.spdx.json`
-- keyless cosign signature bundles such as:
-  - `teams-cli_<VERSION>_linux_amd64.tar.gz.sigstore.json`
-  - `teams-cli_<VERSION>_checksums.txt.sigstore.json`
-- GitHub provenance bundles:
-  - `teams-cli_<VERSION>_artifacts.provenance.bundle.json`
-  - `teams-cli_<VERSION>_checksums.provenance.bundle.json`
+- `teams-cli_<VERSION>_checksums.txt.sigstore.json`
+- `teams-cli_<VERSION>_sboms.tar.gz`
+
+GitHub build attestations are still generated for release archives, but they are
+kept in GitHub attestation records instead of being uploaded as extra release
+files.
 
 ## Install From Release
 
@@ -78,13 +77,19 @@ install -m 0755 teams-cli /usr/local/bin/teams-cli
 teams-cli --version
 ```
 
-To verify a release archive with the bundled keyless signature:
+To verify the signed checksum file:
 
 ```bash
-cosign verify-blob "teams-cli_${VERSION}_darwin_arm64.tar.gz" \
-  --bundle "teams-cli_${VERSION}_darwin_arm64.tar.gz.sigstore.json" \
+cosign verify-blob "teams-cli_${VERSION}_checksums.txt" \
+  --bundle "teams-cli_${VERSION}_checksums.txt.sigstore.json" \
   --certificate-identity "https://github.com/vaishnavucv/teams-cli/.github/workflows/ci-release.yml@refs/heads/main" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+Then verify the archive checksum against that trusted file:
+
+```bash
+grep " teams-cli_${VERSION}_darwin_arm64.tar.gz$" "teams-cli_${VERSION}_checksums.txt" | shasum -a 256 -c
 ```
 
 To verify GitHub build provenance for the same archive:
@@ -203,15 +208,17 @@ Releases now come from `main`, not from pushed tags.
 3. Merge or push that versioned change to `main`.
 4. The combined GitHub Actions workflow runs CI and holds the release job behind the protected `release` environment for manual approval.
 5. After approval, the workflow smoke-tests the built archives, signs and attests the release artifacts, then creates the GitHub release and tag automatically.
-6. Release assets now include tarballs, checksums, per-archive SPDX SBOMs,
-   keyless cosign signatures, and GitHub provenance bundles.
+6. Release assets now include tarballs, checksums, one checksum signature
+   bundle, and one bundled SBOM archive. GitHub attestations remain available
+   through the repository attestation records.
 
 ## Release Verification And Rollback
 
 Recommended verification after every published release:
 
 - verify the archive checksum against `teams-cli_<VERSION>_checksums.txt`
-- verify the keyless cosign bundle with `cosign verify-blob`
+- verify the signed checksum file with `cosign verify-blob`
+- verify the archive against the trusted checksum file
 - verify GitHub provenance with `gh attestation verify`
 - review the SPDX SBOM that matches the downloaded archive
 
