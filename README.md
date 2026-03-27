@@ -21,6 +21,7 @@ Today the client is primarily read-only:
 - Browse Teams, Channels, and direct/group Chats
 - Read recent messages in the selected conversation
 - Refresh conversations automatically without restarting the app
+- Shut down cleanly without leaving refresh workers or in-flight loads behind
 - Navigate the UI entirely from the keyboard
 
 ## Requirements
@@ -54,6 +55,12 @@ To inspect the available runtime flags:
 go run ./ --help
 ```
 
+To print the current build version:
+
+```bash
+go run ./ --version
+```
+
 To build and run the local binary:
 
 ```bash
@@ -71,6 +78,7 @@ Additional runtime options:
 - `--refresh-messages <duration>`: override the selected-conversation polling interval
 - `--refresh-tree <duration>`: override the conversation-tree polling interval
 - `--no-live`: disable background refresh polling entirely
+- `--version`: print the current CLI version and exit
 - `doctor`: run diagnostics for tokens, refresh configuration, terminal support, and Microsoft endpoint reachability
 
 Examples:
@@ -79,6 +87,7 @@ Examples:
 go run ./ --token-dir ~/.config/fossteams --log-level debug --msg 50
 go run ./ --refresh-messages 10s --refresh-tree 30s
 go run ./ --no-live
+go run ./ --version
 go run ./ doctor --token-dir ~/.config/fossteams
 ```
 
@@ -102,8 +111,24 @@ repository.
 - Refreshes the conversation tree every 15 seconds by default
 - Allows refresh polling to be tuned or disabled from the CLI
 - Keeps Teams, Channels, and Chats in a stable order while refreshing
+- Cancels stale message loads when you switch conversations
+- Stops cleanly on `q`, `Ctrl+C`, or `SIGTERM`
 - Displays a keyboard help overlay directly inside the TUI
 - Includes a `doctor` mode for local configuration and connectivity checks
+
+## Runtime Hardening
+
+The current runtime path is designed to fail in place instead of freezing or
+leaving background work running.
+
+- Startup installs a signal-aware app context so `q`, `Ctrl+C`, and `SIGTERM`
+  stop the TUI cleanly
+- Switching conversations cancels the previous in-flight message load before a
+  new fetch starts
+- Message requests use a bounded timeout and bounded retry/backoff for transient
+  failures
+- Fetch errors stay inline inside the messages pane so the TUI remains usable
+  and the next refresh or manual selection can recover
 
 ## Runtime Behavior
 
@@ -113,6 +138,11 @@ immediately and shows a TUI loading bar until the fetch completes.
 The selected conversation refreshes automatically every 5 seconds, and the
 conversation tree refreshes every 15 seconds so new messages, renamed chats,
 and ordering changes show up without restarting the TUI.
+
+If you switch away from a conversation while it is loading, the old request is
+canceled and the new selection takes over. If a transient fetch fails, the
+message pane shows the error inline and the next retry or refresh can recover
+without restarting the process.
 
 Chats and channels are sorted to make browsing more predictable:
 
@@ -126,8 +156,28 @@ This repository should not contain your local Teams tokens.
 
 - `teams-cli` reads tokens from `~/.config/fossteams`
 - `--token-dir` can be used to point at another token directory when needed
+- Runtime startup requires `token-skype.jwt` and `token-chatsvcagg.jwt`
+- `doctor` also inspects `token-teams.jwt` when present and reports expiry
 - Local JWT artifacts are ignored by `.gitignore`
 - Do not copy token files into this repository before building or testing
+
+## Diagnostics
+
+Use `doctor` before debugging runtime issues or when setting up a new machine:
+
+```bash
+go run ./ doctor
+go run ./ doctor --token-dir ~/.config/fossteams --no-live
+```
+
+`doctor` checks:
+
+- terminal support via `TERM`
+- current CLI refresh configuration
+- token directory accessibility
+- required runtime tokens and their expiry/claims
+- optional Teams token metadata when available
+- TCP reachability to `teams.microsoft.com` and the current Teams message host
 
 ## Keyboard Navigation
 
@@ -155,7 +205,7 @@ of the screen, and `?` opens the full help view.
 
 - `?`: show or hide keyboard help
 - `q`: quit
-- `Ctrl+C`: force quit
+- `Ctrl+C`: clean shutdown
 
 If everything goes well, you should see something like this:
 ![Teams CLI example](./docs/screenshots/2021-04-13.png)
@@ -168,8 +218,11 @@ If everything goes well, you should see something like this:
 - Limiting message views to the most recent `N` messages via `msg=<n>` or `--msg=<n>`
 - Showing live loading feedback while messages are being fetched
 - Refreshing the selected conversation and conversation tree automatically
+- Tuning or disabling refresh intervals from the CLI
+- Canceling stale loads and shutting down cleanly
 - Stable ordering for Teams, Channels, and Chats while refreshing
 - Keyboard-first navigation between conversations and messages
+- Running local diagnostics with `doctor`
 
 ## What doesn't work
 
