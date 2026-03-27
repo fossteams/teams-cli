@@ -12,6 +12,8 @@ this repository.
 - `CODEOWNERS` coverage for repository-critical paths
 - CodeQL, dependency-review, and secret-detection workflows for the maintained
   fork
+- Trusted release metadata generation for SBOMs, GitHub provenance bundles, and
+  cosign keyless signatures on release artifacts
 
 ### Changed
 

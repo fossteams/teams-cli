@@ -55,6 +55,17 @@ To build release archives locally:
 ./scripts/build-release-artifacts.sh v0.1.0-test
 ```
 
+To generate trusted-release metadata locally after building archives:
+
+```bash
+go install github.com/anchore/syft/cmd/syft@v1.42.3
+./scripts/generate-release-sboms.sh v0.1.0-test
+```
+
+Keyless signing and GitHub attestations are performed in GitHub Actions during
+the protected `main` release flow, because they rely on GitHub OIDC and
+repository-scoped attestation APIs.
+
 ## Token Handling
 
 Keep JWT files out of the repository.
@@ -96,7 +107,7 @@ The maintained fork now treats `dev` and `main` as protected branches.
 - When preparing the next release, set `version.go` to the next semantic version such as `v0.2.1`
 - Update `CHANGELOG.md` for that version before merging to `main`
 - Pushing the versioned commit to `main` triggers the combined CI and release workflow
-- The workflow builds tarballs for darwin/linux on amd64/arm64, publishes checksums, creates the tag, and creates the GitHub release automatically
+- The workflow builds tarballs for darwin/linux on amd64/arm64, publishes checksums, generates per-archive SPDX SBOMs, signs the release blobs with cosign keyless signing, creates GitHub provenance attestations, creates the tag, and publishes the GitHub release automatically
 - After the release branch has landed, move `dev` back to `version = "dev"` for the next development cycle if needed
 
 ## Change Guidelines
