@@ -6,6 +6,10 @@ Go package.
 
 ## Status
 
+Upstream `fossteams/teams-cli` has been archived and is read-only. This fork is
+the active maintenance branch for the codebase, and new work should target this
+repository.
+
 The CLI can authenticate with `teams-token`, list your Teams, Channels, and
 Chats, and read recent messages inside the TUI.
 
@@ -53,6 +57,16 @@ TERM=xterm-256color ./teams-cli msg=20
 
 The app reads your Teams JWT files from `~/.config/fossteams`. Keep those token
 files outside this repository and do not commit them.
+
+## Contributing
+
+Contributions should be opened against this fork, not the archived upstream
+repository.
+
+- Open pull requests against this repository's `master` branch
+- Run `go build ./...` and `go test ./...` before sending changes
+- Keep local Teams JWT files outside the repository
+- See [CONTRIBUTING.md](./CONTRIBUTING.md) for contributor setup and workflow
 
 ## Current Features
 
