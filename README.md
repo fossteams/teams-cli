@@ -26,7 +26,7 @@ Today the client is primarily read-only:
 
 ## Requirements
 
-- [Golang](https://golang.org/)
+- [Golang](https://golang.org/) 1.23 or newer
 - Valid Teams JWT files generated with [teams-token](https://github.com/fossteams/teams-token)
 - A terminal with cursor-addressing support, for example Terminal.app or iTerm2
 

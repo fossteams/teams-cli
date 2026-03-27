@@ -8,7 +8,7 @@ repository.
 
 Requirements:
 
-- Go 1.18 or newer
+- Go 1.23 or newer
 - A terminal with cursor-addressing support
 - Teams JWT files generated with `teams-token`
 

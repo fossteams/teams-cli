@@ -1,4 +1,4 @@
-name: Go
+name: CI
 
 on:
   push:
@@ -6,9 +6,60 @@ on:
   pull_request:
     branches: [ master ]
 
+permissions:
+  contents: read
+
+env:
+  COVERAGE_MIN: "25.0"
+
 jobs:
-  build:
+  quality:
+    name: Quality (Ubuntu)
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          gofiles="$(git ls-files '*.go')"
+          if [ -z "$gofiles" ]; then
+            exit 0
+          fi
+
+          unformatted="$(gofmt -l $gofiles)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Run staticcheck
+        run: "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - name: Run govulncheck
+        run: "$(go env GOPATH)/bin/govulncheck" ./...
+
+  build-test:
+    name: Build and Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -23,3 +74,62 @@ jobs:
 
       - name: Test
         run: go test -v ./...
+
+  race:
+    name: Race Detector (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+  coverage:
+    name: Coverage (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run coverage
+        run: go test -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Summarize coverage
+        id: coverage
+        run: |
+          coverage="$(go tool cover -func=coverage.out | awk '/^total:/ {sub(/%/, "", $3); print $3}')"
+          echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Coverage"
+            echo ""
+            echo "- Total: ${coverage}%"
+            echo "- Minimum: ${COVERAGE_MIN}%"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce minimum coverage
+        run: |
+          coverage="${{ steps.coverage.outputs.coverage }}"
+          minimum="${COVERAGE_MIN}"
+
+          if ! awk "BEGIN { exit !($coverage >= $minimum) }"; then
+            echo "Coverage ${coverage}% is below minimum ${minimum}%"
+            exit 1
+          fi
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-ubuntu
+          path: coverage.out
