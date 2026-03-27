@@ -11,6 +11,7 @@ permissions:
 
 env:
   COVERAGE_MIN: "25.0"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   quality:

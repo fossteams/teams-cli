@@ -45,13 +45,13 @@ Each release also includes `teams-cli_<VERSION>_checksums.txt`.
 
 ## Install From Release
 
-Replace `<VERSION>` with a real tag such as `v0.1.0`, then download the archive
+Replace `<VERSION>` with a real tag such as `v0.2.0`, then download the archive
 that matches your machine plus the checksum file from the release page.
 
 Example for macOS Apple Silicon:
 
 ```bash
-VERSION=v0.1.0
+VERSION=v0.2.0
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_darwin_arm64.tar.gz"
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_checksums.txt"
 grep " teams-cli_${VERSION}_darwin_arm64.tar.gz$" "teams-cli_${VERSION}_checksums.txt" | shasum -a 256 -c
@@ -63,7 +63,7 @@ teams-cli --version
 Example for Linux x86_64:
 
 ```bash
-VERSION=v0.1.0
+VERSION=v0.2.0
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_linux_amd64.tar.gz"
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_checksums.txt"
 grep " teams-cli_${VERSION}_linux_amd64.tar.gz$" "teams-cli_${VERSION}_checksums.txt" | shasum -a 256 -c

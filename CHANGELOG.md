@@ -7,18 +7,27 @@ this repository.
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-03-27
+
 ### Added
 
-- Security policy and support templates for bugs, feature requests, and pull
-  requests
+- Expanded CLI configuration with `--help`, `--version`, `--log-level`,
+  `--token-dir`, `--refresh-messages`, `--refresh-tree`, `--no-live`, and
+  `doctor`
+- Structured JSON logging with redaction and user-local log files
+- Security policy, issue templates, pull request template, and a lightweight
+  changelog process for this maintained fork
 - Failure-mode tests for transport retries, cancellation, token edge cases,
   malformed payloads, UI focus transitions, and option parsing
 
 ### Changed
 
+- Hardened runtime shutdown, timeout handling, retry behavior, and inline error
+  recovery
 - Refactored the TUI/runtime implementation into smaller files by concern
 - Raised the Go baseline to `1.26.1`
-- Fixed the CI workflow syntax and aligned CI with the current Go baseline
+- Fixed the CI workflow syntax, aligned CI with the current Go baseline, and
+  opted workflows into the Node 24 JavaScript action runtime
 - Clarified maintainer workflow, support paths, and module-path expectations
 
 ## [v0.1.0] - 2026-03-27
