@@ -7,6 +7,8 @@ this repository.
 
 ## [Unreleased]
 
+## [v0.2.1] - 2026-03-27
+
 ### Changed
 
 - The repository now uses a `dev` integration branch and a `main` release branch
