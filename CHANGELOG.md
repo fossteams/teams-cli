@@ -14,6 +14,8 @@ this repository.
   fork
 - Trusted release metadata generation for SBOMs, GitHub provenance bundles, and
   cosign keyless signatures on release artifacts
+- Release archive smoke tests before publication
+- Governed release environment approval and documented rollback guidance
 
 ### Changed
 
