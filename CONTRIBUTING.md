@@ -71,7 +71,7 @@ Keep JWT files out of the repository.
 2. Keep changes scoped and explain the user-visible behavior.
 3. Run `go build ./...` and `go test ./...`.
 4. Run `go run ./ doctor` when changing token loading, refresh behavior, startup configuration, or logging behavior.
-5. Update `README.md` when behavior, controls, or runtime options change.
+5. Update `README.md` and `CHANGELOG.md` when behavior, controls, or runtime options change.
 6. Open the pull request against this repository's `master` branch.
 
 ## Release Process
@@ -90,3 +90,21 @@ Keep JWT files out of the repository.
 - Add or update tests for logging, redaction, or startup diagnostics when
   observability behavior changes
 - Keep documentation aligned with the actual runtime behavior
+
+## Security Reporting
+
+- Review [SECURITY.md](./SECURITY.md) before opening a public issue for any
+  security-sensitive problem
+- Never include JWTs, auth headers, cookies, or private Teams message content
+  in issues, pull requests, or screenshots
+- Prefer sanitized logs when reporting startup, refresh, or auth failures
+
+## Module Path
+
+This fork currently keeps the historical Go module path
+`github.com/fossteams/teams-cli` for compatibility with existing scripts and
+imports.
+
+- Release binaries from this fork are the supported install path
+- Any future module path change should be treated as a breaking release and
+  documented in `CHANGELOG.md`

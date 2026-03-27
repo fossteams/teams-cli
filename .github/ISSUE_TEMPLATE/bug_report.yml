@@ -1,0 +1,90 @@
+name: Bug Report
+description: Report a reproducible problem in the TUI, runtime, diagnostics, release artifacts, or CI.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing:
+
+        - Search existing issues first.
+        - Do not paste JWTs, auth headers, cookies, or private Teams message content.
+        - If this is a security issue, use the guidance in `SECURITY.md` instead of a public issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Tag, commit, or build version, for example `v0.1.0` or `6849731`
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - Release archive
+        - go run
+        - Local binary built from source
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, terminal, and Go version when relevant
+      placeholder: macOS 15 arm64, Terminal.app, Go 1.26.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed problem
+      placeholder: Selecting a chat loads the spinner forever and never shows messages.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal sequence that reproduces the issue
+      placeholder: |
+        1. Run `TERM=xterm-256color ./teams-cli --msg 20`
+        2. Move to a direct chat
+        3. Press Enter
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: The selected conversation should render the most recent messages.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Paste only redacted logs or screenshots with secrets removed
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed tokens, cookies, auth headers, and private Teams content from this report.
+          required: true
+        - label: I can reproduce this on the current `master` branch or latest tagged release.
+          required: true

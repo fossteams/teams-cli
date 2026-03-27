@@ -1,0 +1,46 @@
+name: Feature Request
+description: Propose an improvement to the TUI, diagnostics, release flow, or contributor experience.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What workflow or limitation should change?
+      placeholder: It is difficult to inspect message metadata while debugging a sync issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the behavior you want
+      placeholder: Add an optional debug pane that can show message IDs and sync timestamps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: User impact
+      description: Who benefits and how?
+      placeholder: This would make troubleshooting and CI repros much faster for maintainers.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Document any workarounds or competing approaches
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked that this request is not already covered by an open issue.
+          required: true
+        - label: This request does not require posting secrets or private Teams data.
+          required: true

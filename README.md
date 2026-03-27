@@ -140,6 +140,16 @@ repository.
 - Keep local Teams JWT files outside the repository
 - See [CONTRIBUTING.md](./CONTRIBUTING.md) for contributor setup and workflow
 
+## Support
+
+- Use the built-in issue templates for bug reports and feature requests
+- Review [SECURITY.md](./SECURITY.md) before reporting security-sensitive
+  behavior
+- See [CHANGELOG.md](./CHANGELOG.md) for release notes and unreleased work
+- This fork currently keeps the historical Go module path
+  `github.com/fossteams/teams-cli` for compatibility; release binaries on this
+  fork are the supported install path
+
 ## Current Features
 
 - Lists Teams, Channels, and Chats in one conversation tree
