@@ -331,7 +331,7 @@ jobs:
             dist/*.spdx.json
             dist/*.sig
             dist/*.sigstore.json
-            dist/*_provenance.bundle.json
+            dist/*.provenance.bundle.json
 
       - name: Publish GitHub release
         env:
@@ -349,7 +349,7 @@ jobs:
             dist/*.spdx.json \
             dist/*.sig \
             dist/*.sigstore.json \
-            dist/*_provenance.bundle.json \
+            dist/*.provenance.bundle.json \
             --generate-notes \
             --target "${GITHUB_SHA}" \
             "${args[@]}"
