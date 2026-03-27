@@ -67,19 +67,21 @@ Keep JWT files out of the repository.
 
 ## Contribution Workflow
 
-1. Create a branch from `master`.
+1. Create a branch from `dev`.
 2. Keep changes scoped and explain the user-visible behavior.
 3. Run `go build ./...` and `go test ./...`.
 4. Run `go run ./ doctor` when changing token loading, refresh behavior, startup configuration, or logging behavior.
 5. Update `README.md` and `CHANGELOG.md` when behavior, controls, or runtime options change.
-6. Open the pull request against this repository's `master` branch.
+6. Open the pull request against this repository's `dev` branch.
 
 ## Release Process
 
-- Push a tag like `v0.1.0` on `master` to trigger the release workflow
-- The release workflow builds tarballs for darwin/linux on amd64/arm64
-- Each release publishes a versioned checksums file alongside the archives
-- `workflow_dispatch` can be used to build a snapshot bundle without publishing a tagged release
+- Keep `version.go` at `dev` while iterating on `dev`
+- When preparing the next release, set `version.go` to the next semantic version such as `v0.2.1`
+- Update `CHANGELOG.md` for that version before merging to `main`
+- Pushing the versioned commit to `main` triggers the combined CI and release workflow
+- The workflow builds tarballs for darwin/linux on amd64/arm64, publishes checksums, creates the tag, and creates the GitHub release automatically
+- After the release branch has landed, move `dev` back to `version = "dev"` for the next development cycle if needed
 
 ## Change Guidelines
 

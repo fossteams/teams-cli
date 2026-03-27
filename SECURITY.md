@@ -8,7 +8,8 @@ Teams JWTs, authentication headers, cookies, or private message data.
 
 | Version | Supported |
 | --- | --- |
-| `master` | Yes |
+| `main` | Yes |
+| `dev` | Best effort |
 | Latest tagged release | Yes |
 | Older tags and archived upstream snapshots | No |
 

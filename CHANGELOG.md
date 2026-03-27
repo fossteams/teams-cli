@@ -9,6 +9,9 @@ this repository.
 
 ### Changed
 
+- The repository now uses a `dev` integration branch and a `main` release branch
+- CI and release automation now run from a single combined workflow
+- Releases are now created only from pushes to `main` when `version.go` is bumped to the next semantic version
 - Future release runs now publish through the GitHub CLI in workflow steps
   instead of the deprecated Node 20 release action
 - The release workflow artifact upload step now uses the current

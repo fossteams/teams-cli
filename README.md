@@ -10,6 +10,12 @@ Upstream `fossteams/teams-cli` has been archived and is read-only. This fork is
 the active maintenance branch for the codebase, and new work should target this
 repository.
 
+This fork now uses a `dev` to `main` flow:
+
+- day-to-day work lands on `dev`
+- release candidates are promoted to `main`
+- pushing a new semantic version in `version.go` to `main` publishes the next release
+
 The CLI can authenticate with `teams-token`, list your Teams, Channels, and
 Chats, and read recent messages inside the TUI.
 
@@ -135,10 +141,19 @@ go run ./ doctor --token-dir ~/.config/fossteams
 Contributions should be opened against this fork, not the archived upstream
 repository.
 
-- Open pull requests against this repository's `master` branch
+- Open pull requests against this repository's `dev` branch
 - Run `go build ./...` and `go test ./...` before sending changes
 - Keep local Teams JWT files outside the repository
 - See [CONTRIBUTING.md](./CONTRIBUTING.md) for contributor setup and workflow
+
+## Release Flow
+
+Releases now come from `main`, not from pushed tags.
+
+1. Develop on `dev` and keep `version.go` at `dev`.
+2. When the next release is ready, change `version.go` to the next version such as `v0.2.1` and update [CHANGELOG.md](./CHANGELOG.md).
+3. Merge or push that versioned change to `main`.
+4. The combined GitHub Actions workflow runs CI and, on successful `main` pushes, creates the GitHub release and tag automatically.
 
 ## Support
 

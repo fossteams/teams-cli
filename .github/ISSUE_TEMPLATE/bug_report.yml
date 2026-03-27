@@ -86,5 +86,5 @@ body:
       options:
         - label: I removed tokens, cookies, auth headers, and private Teams content from this report.
           required: true
-        - label: I can reproduce this on the current `master` branch or latest tagged release.
+        - label: I can reproduce this on the current `dev` or `main` branch, or on the latest tagged release.
           required: true
