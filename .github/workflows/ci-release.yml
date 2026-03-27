@@ -9,6 +9,8 @@ on:
     branches:
       - dev
       - main
+  schedule:
+    - cron: "17 3 * * 1"
 
 permissions:
   contents: read
@@ -25,6 +27,7 @@ jobs:
   metadata:
     name: Release Metadata
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
     outputs:
       version: ${{ steps.version.outputs.value }}
       should_release: ${{ steps.version.outputs.should_release }}
@@ -64,6 +67,7 @@ jobs:
     name: Quality (Ubuntu)
     runs-on: ubuntu-latest
     needs: metadata
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
 
@@ -105,6 +109,7 @@ jobs:
     name: Build and Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: metadata
+    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +135,7 @@ jobs:
     name: Race Detector (Ubuntu)
     runs-on: ubuntu-latest
     needs: metadata
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
 
@@ -146,6 +152,7 @@ jobs:
     name: Coverage (Ubuntu)
     runs-on: ubuntu-latest
     needs: metadata
+    if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v5
 
@@ -187,6 +194,67 @@ jobs:
           name: coverage-ubuntu
           path: coverage.out
 
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    needs: metadata
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install gitleaks
+        run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+
+      - name: Scan working tree
+        run: |
+          "$(go env GOPATH)/bin/gitleaks" dir . --redact
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: manual
+
+      - name: Build
+        run: go build ./...
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+
   release:
     name: Publish Release
     runs-on: ubuntu-latest
@@ -196,6 +264,8 @@ jobs:
       - build-test
       - race
       - coverage
+      - secret-scan
+      - codeql
     if: needs.metadata.outputs.should_release == 'true'
     permissions:
       contents: write

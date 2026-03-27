@@ -156,6 +156,8 @@ Phase 1 governance for this maintained fork now includes:
 - `CODEOWNERS` coverage for the repository, workflows, and release scripts
 - protected `main` and `dev` branches with required status checks and
   pull-request review policy
+- one combined `CI and Release` workflow that runs quality, security, and
+  release jobs
 - CodeQL analysis for Go sources
 - dependency review on pull requests
 - secret scanning in CI with `gitleaks`
