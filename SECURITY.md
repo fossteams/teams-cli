@@ -61,6 +61,22 @@ The most security-sensitive areas in this fork are:
 - request authentication and retry behavior
 - local log storage and redaction
 - release artifacts and CI workflows
+- repository governance and protected-branch policy
+
+## Preventive Controls
+
+This maintained fork uses layered preventive controls in addition to manual
+review:
+
+- protected `dev` and `main` branches
+- CODEOWNERS coverage for repository-critical paths
+- required CI status checks before normal merges
+- CodeQL analysis for Go code
+- dependency review on pull requests
+- secret scanning in CI
+
+These checks reduce risk, but they do not replace careful review of token
+handling, request authentication, or release artifacts.
 
 ## Disclosure
 

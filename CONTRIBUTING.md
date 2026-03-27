@@ -73,6 +73,23 @@ Keep JWT files out of the repository.
 4. Run `go run ./ doctor` when changing token loading, refresh behavior, startup configuration, or logging behavior.
 5. Update `README.md` and `CHANGELOG.md` when behavior, controls, or runtime options change.
 6. Open the pull request against this repository's `dev` branch.
+7. Wait for the governed checks to pass:
+   - `CI and Release` quality/build/race/coverage jobs
+   - `CodeQL`
+   - `Dependency Review`
+   - `Secret Detection`
+8. Expect CODEOWNERS review for workflow, security-policy, and release-path changes.
+
+## Branch Governance
+
+The maintained fork now treats `dev` and `main` as protected branches.
+
+- `dev` is the integration branch and should receive normal feature pull requests
+- `main` is the release branch and should receive reviewed promotions from `dev`
+- direct pushes are reserved for maintainer recovery cases
+- signed commits are expected on protected branches once the local Git signing
+  setup is in place
+- stale reviews should be refreshed after materially changing a pull request
 
 ## Release Process
 

@@ -15,6 +15,8 @@ This fork now uses a `dev` to `main` flow:
 - day-to-day work lands on `dev`
 - release candidates are promoted to `main`
 - pushing a new semantic version in `version.go` to `main` publishes the next release
+- `main` and `dev` are governed branches with required checks, CODEOWNERS, and
+  pull-request based review expectations
 
 The CLI can authenticate with `teams-token`, list your Teams, Channels, and
 Chats, and read recent messages inside the TUI.
@@ -142,9 +144,25 @@ Contributions should be opened against this fork, not the archived upstream
 repository.
 
 - Open pull requests against this repository's `dev` branch
+- Expect CODEOWNERS review on repository, workflow, and release-path changes
 - Run `go build ./...` and `go test ./...` before sending changes
 - Keep local Teams JWT files outside the repository
 - See [CONTRIBUTING.md](./CONTRIBUTING.md) for contributor setup and workflow
+
+## Governance And Security Gates
+
+Phase 1 governance for this maintained fork now includes:
+
+- `CODEOWNERS` coverage for the repository, workflows, and release scripts
+- protected `main` and `dev` branches with required status checks and
+  pull-request review policy
+- CodeQL analysis for Go sources
+- dependency review on pull requests
+- secret scanning in CI with `gitleaks`
+
+The repository owner remains the only maintainer today, so branch protection is
+configured to preserve an admin bypass path for recovery while still enforcing
+checks and reviews for the normal contribution flow.
 
 ## Release Flow
 

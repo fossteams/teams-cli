@@ -7,6 +7,17 @@ this repository.
 
 ## [Unreleased]
 
+### Added
+
+- `CODEOWNERS` coverage for repository-critical paths
+- CodeQL, dependency-review, and secret-detection workflows for the maintained
+  fork
+
+### Changed
+
+- Source governance now expects protected `dev` and `main` branches with
+  required checks and review policy
+
 ## [v0.2.1] - 2026-03-27
 
 ### Changed
