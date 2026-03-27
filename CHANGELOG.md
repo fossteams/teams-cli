@@ -17,6 +17,8 @@ this repository.
 
 - Source governance now expects protected `dev` and `main` branches with
   required checks and review policy
+- Security gates now run inside the single `CI and Release` workflow instead of
+  separate workflow files
 
 ## [v0.2.1] - 2026-03-27
 

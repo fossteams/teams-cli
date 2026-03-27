@@ -74,10 +74,9 @@ Keep JWT files out of the repository.
 5. Update `README.md` and `CHANGELOG.md` when behavior, controls, or runtime options change.
 6. Open the pull request against this repository's `dev` branch.
 7. Wait for the governed checks to pass:
-   - `CI and Release` quality/build/race/coverage jobs
-   - `CodeQL`
-   - `Dependency Review`
-   - `Secret Detection`
+   - the single `CI and Release` workflow, which now includes quality,
+     platform, security, and release gating jobs
+   - required job checks such as `CodeQL`, `Dependency Review`, and `Secret Detection`
 8. Expect CODEOWNERS review for workflow, security-policy, and release-path changes.
 
 ## Branch Governance
