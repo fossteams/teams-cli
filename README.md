@@ -17,6 +17,7 @@ This fork now uses a `dev` to `main` flow:
 - pushing a new semantic version in `version.go` to `main` publishes the next release
 - `main` and `dev` are governed branches with required checks, CODEOWNERS, and
   pull-request based review expectations
+- signed commits are required on `main` and `dev`
 
 The CLI can authenticate with `teams-token`, list your Teams, Channels, and
 Chats, and read recent messages inside the TUI.
@@ -64,13 +65,13 @@ Each release also includes:
 
 ## Install From Release
 
-Replace `<VERSION>` with a real tag such as `v0.2.0`, then download the archive
+Replace `<VERSION>` with a real tag such as `v0.2.1`, then download the archive
 that matches your machine plus the checksum file from the release page.
 
 Example for macOS Apple Silicon:
 
 ```bash
-VERSION=v0.2.0
+VERSION=v0.2.1
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_darwin_arm64.tar.gz"
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_checksums.txt"
 grep " teams-cli_${VERSION}_darwin_arm64.tar.gz$" "teams-cli_${VERSION}_checksums.txt" | shasum -a 256 -c
@@ -99,7 +100,7 @@ gh attestation verify "teams-cli_${VERSION}_darwin_arm64.tar.gz" \
 Example for Linux x86_64:
 
 ```bash
-VERSION=v0.2.0
+VERSION=v0.2.1
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_linux_amd64.tar.gz"
 curl -LO "https://github.com/vaishnavucv/teams-cli/releases/download/${VERSION}/teams-cli_${VERSION}_checksums.txt"
 grep " teams-cli_${VERSION}_linux_amd64.tar.gz$" "teams-cli_${VERSION}_checksums.txt" | shasum -a 256 -c
@@ -184,6 +185,7 @@ Phase 1 governance for this maintained fork now includes:
 - `CODEOWNERS` coverage for the repository, workflows, and release scripts
 - protected `main` and `dev` branches with required status checks and
   pull-request review policy
+- required signed commits on protected branches
 - one combined `CI and Release` workflow that runs quality, security, and
   release jobs
 - CodeQL analysis for Go sources
@@ -201,9 +203,30 @@ Releases now come from `main`, not from pushed tags.
 1. Develop on `dev` and keep `version.go` at `dev`.
 2. When the next release is ready, change `version.go` to the next version such as `v0.2.1` and update [CHANGELOG.md](./CHANGELOG.md).
 3. Merge or push that versioned change to `main`.
-4. The combined GitHub Actions workflow runs CI and, on successful `main` pushes, creates the GitHub release and tag automatically.
-5. Release assets now include tarballs, checksums, per-archive SPDX SBOMs,
+4. The combined GitHub Actions workflow runs CI and holds the release job behind the protected `release` environment for manual approval.
+5. After approval, the workflow smoke-tests the built archives, signs and attests the release artifacts, then creates the GitHub release and tag automatically.
+6. Release assets now include tarballs, checksums, per-archive SPDX SBOMs,
    keyless cosign signatures, and GitHub provenance bundles.
+
+## Release Verification And Rollback
+
+Recommended verification after every published release:
+
+- verify the archive checksum against `teams-cli_<VERSION>_checksums.txt`
+- verify the keyless cosign bundle with `cosign verify-blob`
+- verify GitHub provenance with `gh attestation verify`
+- review the SPDX SBOM that matches the downloaded archive
+
+Rollback guidance:
+
+- if a release is still waiting for approval, reject or cancel the `release`
+  environment deployment instead of publishing
+- if a bad release is already published, prefer shipping a superseding patch
+  release instead of replacing assets in place
+- fix on `dev`, promote to `main`, bump to the next patch version, and publish a
+  new signed release
+- only delete or edit an existing release as an emergency exception, because it
+  weakens the audit trail for signed artifacts
 
 ## Support
 

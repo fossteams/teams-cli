@@ -259,6 +259,8 @@ jobs:
   release:
     name: Publish Release
     runs-on: ubuntu-latest
+    environment:
+      name: release
     needs:
       - metadata
       - quality
@@ -282,14 +284,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Build archives and checksums
+        run: ./scripts/build-release-artifacts.sh "${{ needs.metadata.outputs.version }}"
+
+      - name: Smoke test release archives
+        run: ./scripts/smoke-test-release-artifacts.sh "${{ needs.metadata.outputs.version }}"
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.1
 
       - name: Install syft
         run: go install github.com/anchore/syft/cmd/syft@${SYFT_VERSION}
-
-      - name: Build archives and checksums
-        run: ./scripts/build-release-artifacts.sh "${{ needs.metadata.outputs.version }}"
 
       - name: Generate per-archive SBOMs
         run: ./scripts/generate-release-sboms.sh "${{ needs.metadata.outputs.version }}"

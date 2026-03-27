@@ -52,14 +52,14 @@ go run ./ doctor
 To build release archives locally:
 
 ```bash
-./scripts/build-release-artifacts.sh v0.1.0-test
+./scripts/build-release-artifacts.sh v0.2.1-test
 ```
 
 To generate trusted-release metadata locally after building archives:
 
 ```bash
 go install github.com/anchore/syft/cmd/syft@v1.42.3
-./scripts/generate-release-sboms.sh v0.1.0-test
+./scripts/generate-release-sboms.sh v0.2.1-test
 ```
 
 Keyless signing and GitHub attestations are performed in GitHub Actions during
@@ -97,8 +97,7 @@ The maintained fork now treats `dev` and `main` as protected branches.
 - `dev` is the integration branch and should receive normal feature pull requests
 - `main` is the release branch and should receive reviewed promotions from `dev`
 - direct pushes are reserved for maintainer recovery cases
-- signed commits are expected on protected branches once the local Git signing
-  setup is in place
+- signed commits are required on protected branches
 - stale reviews should be refreshed after materially changing a pull request
 
 ## Release Process
@@ -107,8 +106,21 @@ The maintained fork now treats `dev` and `main` as protected branches.
 - When preparing the next release, set `version.go` to the next semantic version such as `v0.2.1`
 - Update `CHANGELOG.md` for that version before merging to `main`
 - Pushing the versioned commit to `main` triggers the combined CI and release workflow
-- The workflow builds tarballs for darwin/linux on amd64/arm64, publishes checksums, generates per-archive SPDX SBOMs, signs the release blobs with cosign keyless signing, creates GitHub provenance attestations, creates the tag, and publishes the GitHub release automatically
+- The `Publish Release` job is gated by the protected `release` environment and requires manual approval before publication
+- Before publish, the workflow smoke-tests the built archives on the runner
+- After approval, the workflow generates SPDX SBOMs, signs release blobs with cosign keyless signing, creates GitHub provenance attestations, creates the tag, and publishes the GitHub release automatically
 - After the release branch has landed, move `dev` back to `version = "dev"` for the next development cycle if needed
+
+## Release Rollback
+
+- If the release job is waiting for environment approval, reject it rather than
+  publishing suspect artifacts
+- After publication, prefer a new patch release over mutating or replacing an
+  existing signed release
+- Revert or fix on `dev`, promote to `main`, bump the next patch version, and
+  let the governed release flow publish the replacement
+- If you must delete a release, record why in `CHANGELOG.md` or the release
+  notes so the audit trail stays understandable
 
 ## Change Guidelines
 
