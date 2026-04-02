@@ -12,11 +12,11 @@ This project is still WIP and will be updated with more features. The goal is to
 
 **We have moved our comprehensive documentation to the Wiki.** 
 
-Please browse the [wiki/](wiki/Home.md) folder for detailed guides:
-- [Installation Guide](wiki/Installation.md)
-- [Usage & Keyboard Navigation](wiki/Usage.md)
-- [Features List](wiki/Features.md)
-- [Development, CI/CD, & Governance](wiki/CI-CD.md)
+Please browse the [GitHub Wiki](https://github.com/vaishnavucv/teams-cli/wiki) for detailed guides:
+- [Installation Guide](https://github.com/vaishnavucv/teams-cli/wiki/Installation)
+- [Usage & Keyboard Navigation](https://github.com/vaishnavucv/teams-cli/wiki/Usage)
+- [Features List](https://github.com/vaishnavucv/teams-cli/wiki/Features)
+- [Development, CI/CD, & Governance](https://github.com/vaishnavucv/teams-cli/wiki/CI-CD)
 
 ## Quick Start
 
