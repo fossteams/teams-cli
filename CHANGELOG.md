@@ -7,8 +7,16 @@ this repository.
 
 ## [Unreleased]
 
+## [v0.2.3] - 2026-04-02
+
+### Added
+
+- Migrated detailed documentation directly to the repository's native GitHub Wiki tab
+- Added comprehensive CI/CD pipeline architectural explanations
+
 ### Changed
 
+- Stripped `README.md` down to a minimal Quick Start and Lite Overview
 - Simplified release assets to the standard consumer set: platform archives,
   one checksums file, one checksum signature bundle, and one bundled SBOM
   archive, while keeping GitHub attestations in the platform attestation store
