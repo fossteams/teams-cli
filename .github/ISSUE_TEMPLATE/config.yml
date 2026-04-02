@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/vaishnavucv/teams-cli/blob/main/SECURITY.md
+    about: Report vulnerabilities privately. Do not post JWTs, auth headers, or private Teams data in public issues.
+  - name: Contribution guide
+    url: https://github.com/vaishnavucv/teams-cli/blob/main/CONTRIBUTING.md
+    about: Review setup, validation, release, and token-handling guidance before opening a change.

@@ -2,7 +2,8 @@ package main
 
 const (
 	TvLoginStatus = "tvLoginStatus"
-	TvError = "tvErrTitle"
+	TvError       = "tvErrTitle"
+	TvHelp        = "tvHelp"
 )
 
 // Trees
@@ -14,12 +15,14 @@ const (
 
 const (
 	ViChat = "viChat"
+	MoHelp = "moHelp"
 )
 
 // Pages
 
 const (
-	PageMain = "pageMain"
+	PageMain  = "pageMain"
 	PageLogin = "pageLogin"
 	PageError = "pageError"
+	PageHelp  = "pageHelp"
 )

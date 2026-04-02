@@ -1,45 +1,70 @@
 # teams-cli
 
-A Command Line Interface (or TUI) to interact with Microsoft Teams
-that uses the [teams-api](https://github.com/fossteams/teams-api)
-Go package.
+A Command Line Interface (or TUI) to interact with Microsoft Teams that uses the [teams-api](https://github.com/fossteams/teams-api) Go package.
 
 ## Status
 
-The CLI only let you log-in and fetches your user and conversations,
-only the Teams and Channels so far are displayed, but on the background the
-conversations (Groups + DMs) are fetched too.
-  
-This project is still WIP and will be updated soon with new features. The goal is to
-have a CLI / TUI replacement for the Microsoft Teams desktop client.
+Upstream `fossteams/teams-cli` has been archived and is read-only. This fork is the active maintenance branch for the codebase, and new work should target this repository.
 
-## Requirements
+This project is still WIP and will be updated with more features. The goal is to have a CLI / TUI replacement for the Microsoft Teams desktop client. Today the client is primarily read-only (browsing conversations and reading recent messages).
 
-- [Golang](https://golang.org/)
+## Documentation
 
-## Usage
+**We have moved our comprehensive documentation to the Wiki.** 
 
-Follow the instructions on how to obtain a token with [teams-token](https://github.com/fossteams/teams-token),
-then simply run the following to start the app. Binary releases will appear on this repository as soon as
-we have a product with more features.
+Please browse the [GitHub Wiki](https://github.com/vaishnavucv/teams-cli/wiki) for detailed guides:
+- [Installation Guide](https://github.com/vaishnavucv/teams-cli/wiki/Installation)
+- [Usage & Keyboard Navigation](https://github.com/vaishnavucv/teams-cli/wiki/Usage)
+- [Features List](https://github.com/vaishnavucv/teams-cli/wiki/Features)
+- [Development, CI/CD, & Governance](https://github.com/vaishnavucv/teams-cli/wiki/CI-CD)
 
+## Quick Start
+
+### Requirements
+- [Golang](https://golang.org/) 1.26.1 or newer
+- Valid Teams JWT files generated with [teams-token](https://github.com/fossteams/teams-token)
+- A terminal with cursor-addressing support (e.g. Terminal.app, iTerm2)
+
+### Basic Usage
+
+Run the app locally once you have obtained your tokens:
 ```bash
 go run ./
 ```
 
-If everything goes well, you should see something like this:
-![Teams CLI example](./docs/screenshots/2021-04-13.png)
+To limit each conversation view to the most recent `N` messages:
+```bash
+go run ./ msg=20
+```
 
-## What works
+*For more runtime flags and usage examples, see the [Usage Wiki](wiki/Usage.md).*
 
-- Logging in into Teams using the token generated via `teams-token`
-- Getting the list of Teams + Channels
-- Reading channels
+## Lite Overview
 
-## What doesn't work
+### Core Features
+- Browse your Teams, Channels, and direct/group Chats from a TUI.
+- Automatically load and read recent messages in selected conversations.
+- Background refresh for both message lists and conversation trees.
+- Navigate the UI entirely with keyboard shortcuts.
+- Clean shutdown on `q` or `Ctrl+C`.
 
-- Everything else
+### Keyboard Navigation
+- **Arrow Keys**: Move up/down lists, expand (`Right`) or collapse (`Left`) trees.
+- **Enter**: Open the selected channel or chat.
+- **Tab**: Switch focus between the conversations tree and messages pane.
+- **Esc**: Go back one level or return to the conversations tree.
+- **?**: Show/hide the full keyboard help inside the app.
+- **q**: Quit the app.
 
-## You might also be interested in
+### Diagnostics
+If you have issues logging in or starting the app, run the built-in doctor to test token validity and network reachability:
+```bash
+go run ./ doctor
+```
 
-- [fossteams-frontend](https://github.com/fossteams/fossteams-frontend): a Vue based frontend for Microsoft Teams
+## Support
+
+- Found an issue or have a feature request? Please use our **built-in issue templates**.
+- Found a security vulnerability? Please review our **[SECURITY.md](./SECURITY.md)** guidelines privately before opening a public issue.
+- View our **[CHANGELOG.md](./CHANGELOG.md)** for detailed release notes and updates.
+- This fork maintains the `github.com/fossteams/teams-cli` module path for compatibility, but the releases published here are the officially supported install path.

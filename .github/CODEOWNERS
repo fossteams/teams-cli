@@ -1,0 +1,8 @@
+# Default ownership for the maintained fork.
+* @vaishnavucv
+
+# Security-sensitive paths stay with the maintainer.
+/.github/ @vaishnavucv
+/SECURITY.md @vaishnavucv
+/CHANGELOG.md @vaishnavucv
+/scripts/ @vaishnavucv
