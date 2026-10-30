@@ -47,25 +47,42 @@ func (s *AppState) runLiveRefreshLoop() {
 	for {
 		select {
 		case <-messageTicker.C:
-			if !atomic.CompareAndSwapUint32(&s.liveMessageRefreshActive, 0, 1) {
-				continue
-			}
-			go func() {
-				defer atomic.StoreUint32(&s.liveMessageRefreshActive, 0)
-				s.refreshSelectedConversationMessages()
-			}()
+			s.startMessageRefresh()
 		case <-conversationTicker.C:
-			if !atomic.CompareAndSwapUint32(&s.liveTreeRefreshActive, 0, 1) {
-				continue
-			}
-			go func() {
-				defer atomic.StoreUint32(&s.liveTreeRefreshActive, 0)
-				s.refreshConversationTree()
-			}()
+			s.checkTokenExpiry()
+			s.startConversationTreeRefresh()
 		case <-s.appContext().Done():
 			return
 		}
 	}
+}
+
+// startMessageRefresh runs an in-place refresh of the selected conversation in
+// the background, unless one is already running. It reports whether a refresh
+// was started.
+func (s *AppState) startMessageRefresh() bool {
+	if !atomic.CompareAndSwapUint32(&s.liveMessageRefreshActive, 0, 1) {
+		return false
+	}
+	go func() {
+		defer atomic.StoreUint32(&s.liveMessageRefreshActive, 0)
+		s.refreshSelectedConversationMessages()
+	}()
+	return true
+}
+
+// startConversationTreeRefresh refetches the conversation list in the
+// background, unless a refresh is already running. It reports whether one
+// was started.
+func (s *AppState) startConversationTreeRefresh() bool {
+	if !atomic.CompareAndSwapUint32(&s.liveTreeRefreshActive, 0, 1) {
+		return false
+	}
+	go func() {
+		defer atomic.StoreUint32(&s.liveTreeRefreshActive, 0)
+		s.refreshConversationTree()
+	}()
+	return true
 }
 
 func (s *AppState) refreshSelectedConversationMessages() {
@@ -89,6 +106,7 @@ func (s *AppState) refreshSelectedConversationMessages() {
 		if errors.Is(err, context.Canceled) {
 			return
 		}
+		s.noteAuthFailure(err)
 		s.appLogger().WithFields(logrus.Fields{
 			"conversation_id":    target.ID,
 			"conversation_title": target.Title,
@@ -141,6 +159,7 @@ func (s *AppState) refreshConversationTree() {
 
 	data, err := s.fetchConversationData()
 	if err != nil {
+		s.noteAuthFailure(err)
 		s.appLogger().WithError(err).Warn("live conversation refresh failed")
 		return
 	}
@@ -159,6 +178,7 @@ func (s *AppState) refreshConversationTree() {
 
 		state := captureTreeViewState(treeView.GetRoot(), treeView.GetCurrentNode())
 		s.applyConversationData(data)
+		s.logConversationDataIssues()
 
 		rootNode, selectedNode, _ := s.buildConversationTree(state)
 		treeView.SetRoot(rootNode)
@@ -203,6 +223,7 @@ func (s *AppState) loadMessages(ctx context.Context, target ConversationTarget, 
 			return
 		}
 
+		s.noteAuthFailure(err)
 		s.appLogger().WithFields(logrus.Fields{
 			"conversation_id":    target.ID,
 			"conversation_title": target.Title,
@@ -302,16 +323,12 @@ func (s *AppState) waitForMessageFetchRetry(ctx context.Context, attempt int) er
 }
 
 func (s *AppState) fetchMessages(ctx context.Context, target ConversationTarget) ([]csa.ChatMessage, error) {
-	if s.teamsClient == nil {
-		return nil, fmt.Errorf("teams client is nil")
+	session := s.session()
+	if session == nil {
+		return nil, fmt.Errorf("messaging session is not ready")
 	}
 
-	baseURL, err := url.Parse(csa.MessagesHost)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse messages host: %v", err)
-	}
-
-	endpointURL, err := baseURL.Parse("v1/users/ME/conversations/" + url.QueryEscape(target.ID) + "/messages")
+	endpointURL, err := url.Parse(session.messagesURL(target.ID))
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse messages endpoint: %v", err)
 	}
@@ -364,11 +381,14 @@ func (s *AppState) fetchMessages(ctx context.Context, target ConversationTarget)
 }
 
 func (s *AppState) fetchMessagesOnce(ctx context.Context, endpoint string) ([]csa.ChatMessage, error) {
-	req, err := s.teamsClient.ChatSvc().AuthenticatedRequest(http.MethodGet, endpoint, nil)
+	session := s.session()
+	if session == nil {
+		return nil, fmt.Errorf("messaging session is not ready")
+	}
+	req, err := session.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	req = req.WithContext(ctx)
 
 	client := s.httpClient
 	if client == nil {

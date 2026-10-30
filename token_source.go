@@ -90,9 +90,27 @@ func resolveToken(tokenType, tokenDir string) (resolvedToken, error) {
 	}, nil
 }
 
+// applyTokenDirToEnv exports the tokens under an explicit --token-dir so the
+// Teams library picks them up. An unset directory is left alone: tokens may
+// then come from the MS_TEAMS_*_TOKEN variables the process started with.
 func applyTokenDirToEnv(tokenDir string) error {
 	if strings.TrimSpace(tokenDir) == "" {
 		return nil
+	}
+
+	return exportTokensToEnv(tokenDir)
+}
+
+// exportTokensToEnv publishes the runtime tokens saved under tokenDir, or the
+// default directory when it is empty, as MS_TEAMS_*_TOKEN variables. Both the
+// Teams library and resolveToken read those first, so this is what makes a
+// freshly written token file take effect over whatever the process started with.
+func exportTokensToEnv(tokenDir string) error {
+	if strings.TrimSpace(tokenDir) == "" {
+		var err error
+		if tokenDir, err = defaultTokenDir(); err != nil {
+			return err
+		}
 	}
 
 	for _, tokenType := range runtimeTokenTypes {
@@ -106,6 +124,50 @@ func applyTokenDirToEnv(tokenDir string) error {
 	}
 
 	return nil
+}
+
+const tokenRefreshHint = "refresh with: teams-cli refresh-token"
+
+// checkRuntimeTokens fails fast when a token the TUI needs is missing or has
+// already expired, so the user sees a clear message instead of a 401 later.
+func checkRuntimeTokens(tokenDir string, now time.Time) error {
+	for _, tokenType := range runtimeTokenTypes {
+		token, err := resolveToken(tokenType, tokenDir)
+		if err != nil {
+			return fmt.Errorf("%v; %s", err, tokenRefreshHint)
+		}
+
+		meta, err := parseJWTMetadata(token.Value)
+		if err != nil {
+			return fmt.Errorf("%s: %v; %s", token.Location, err, tokenRefreshHint)
+		}
+		if meta.HasExpiry && now.After(meta.ExpiresAt) {
+			ago := now.Sub(meta.ExpiresAt).Round(time.Minute)
+			return fmt.Errorf("%s expired at %s (%s ago); %s",
+				filepath.Base(token.Location), meta.ExpiresAt.Local().Format("15:04"), humanDuration(ago), tokenRefreshHint)
+		}
+	}
+
+	return nil
+}
+
+func humanDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "less than a minute"
+	case d < time.Hour:
+		minutes := int(d.Minutes())
+		if minutes == 1 {
+			return "1 minute"
+		}
+		return fmt.Sprintf("%d minutes", minutes)
+	default:
+		hours := int(d.Hours())
+		if hours == 1 {
+			return "1 hour"
+		}
+		return fmt.Sprintf("%d hours", hours)
+	}
 }
 
 type jwtMetadata struct {

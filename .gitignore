@@ -4,3 +4,7 @@ teams-cli
 dist/
 token-*.jwt
 *.jwt
+
+# token refresh secrets and browser profile (written under token dir)
+sign-in-cookies.json
+browser-profile/

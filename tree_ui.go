@@ -7,8 +7,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fossteams/teams-api/pkg/csa"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"github.com/sirupsen/logrus"
 )
 
 func (s *AppState) buildConversationTree(state treeViewState) (*tview.TreeNode, *tview.TreeNode, *tview.TreeNode) {
@@ -54,6 +56,7 @@ func (s *AppState) buildConversationTree(state treeViewState) (*tview.TreeNode, 
 			channelNode.SetReference(ConversationTarget{
 				ID:    channel.Id,
 				Title: title,
+				Kind:  targetKindChannel,
 			})
 			channelNode.SetColor(tcell.ColorGreen)
 
@@ -74,16 +77,41 @@ func (s *AppState) buildConversationTree(state treeViewState) (*tview.TreeNode, 
 	}
 	teamsNode.SetExpanded(teamsExpanded)
 
-	chatsExpanded := pathExpanded(state.expandedPaths, chatsPath)
-	if len(state.expandedPaths) == 0 && state.selectedPath == "" && state.selectedTargetID == "" && firstNode == nil && len(s.conversations.Chats) > 0 {
-		chatsExpanded = true
+	meetingsPath := joinTreePath(rootPath, "Meetings")
+	meetingsNode := tview.NewTreeNode("Meetings")
+	if state.selectedPath == meetingsPath {
+		selectedNode = meetingsNode
 	}
+
+	var pinnedChats, directChats, meetingChats []csa.Chat
 	for _, chat := range s.conversations.Chats {
+		switch {
+		case s.pins.pinned(chat.Id):
+			pinnedChats = append(pinnedChats, chat)
+		case isMeetingChat(chat):
+			meetingChats = append(meetingChats, chat)
+		default:
+			directChats = append(directChats, chat)
+		}
+	}
+
+	freshTree := len(state.expandedPaths) == 0 && state.selectedPath == "" && state.selectedTargetID == ""
+	addChat := func(parent *tview.TreeNode, chat csa.Chat, pinned bool, expanded *bool) {
 		title := s.chatTitle(chat)
-		chatNode := tview.NewTreeNode(title)
+		text := title
+		if pinned {
+			text = pinMarker + title
+		}
+		kind := targetKindChat
+		if isMeetingChat(chat) {
+			kind = targetKindMeeting
+		}
+
+		chatNode := tview.NewTreeNode(text)
 		chatNode.SetReference(ConversationTarget{
 			ID:    chat.Id,
 			Title: title,
+			Kind:  kind,
 		})
 		chatNode.SetColor(tcell.ColorTeal)
 
@@ -92,15 +120,36 @@ func (s *AppState) buildConversationTree(state treeViewState) (*tview.TreeNode, 
 		}
 		if state.selectedTargetID == chat.Id {
 			selectedNode = chatNode
-			chatsExpanded = true
+			*expanded = true
 		}
 
-		chatsNode.AddChild(chatNode)
+		parent.AddChild(chatNode)
+	}
+
+	chatsExpanded := pathExpanded(state.expandedPaths, chatsPath)
+	if freshTree && firstNode == nil && len(pinnedChats)+len(directChats) > 0 {
+		chatsExpanded = true
+	}
+	for _, chat := range pinnedChats {
+		addChat(chatsNode, chat, true, &chatsExpanded)
+	}
+	for _, chat := range directChats {
+		addChat(chatsNode, chat, false, &chatsExpanded)
 	}
 	chatsNode.SetExpanded(chatsExpanded)
 
+	meetingsExpanded := pathExpanded(state.expandedPaths, meetingsPath)
+	if freshTree && firstNode == nil && len(meetingChats) > 0 {
+		meetingsExpanded = true
+	}
+	for _, chat := range meetingChats {
+		addChat(meetingsNode, chat, false, &meetingsExpanded)
+	}
+	meetingsNode.SetExpanded(meetingsExpanded)
+
 	rootNode.AddChild(teamsNode)
 	rootNode.AddChild(chatsNode)
+	rootNode.AddChild(meetingsNode)
 
 	if selectedNode == nil {
 		if firstNode != nil {
@@ -166,40 +215,44 @@ func pathExpanded(expandedPaths map[string]struct{}, path string) bool {
 func (s *AppState) keyboardHelpText() string {
 	if !s.liveRefreshEnabled() {
 		return strings.TrimSpace(`
-Tree   Up/Down move   Right/l open
+Tree   Up/Down/j/k move   Right/l open
        Left/h/Esc back   Enter read
-       Tab msgs
+       p pin/unpin   Tab msgs
 
-Msgs   Up/Down move   PgUp/Dn page
-       Home/End jump   Left/h/Esc/Tab back
+Msgs   Up/Down/j/k scroll   PgUp/Dn page
+       g/G or Home/End jump   Left/h/Esc/Tab back
+       Enter/i reply   (Enter sends, Esc cancels)
 
 Live   Background refresh disabled
 
-? help   q quit   Ctrl+C force quit
+? help   R sign in again   q quit   Ctrl+C force quit
 `)
 	}
 
 	return strings.TrimSpace(fmt.Sprintf(`
-Tree   Up/Down move   Right/l open
+Tree   Up/Down/j/k move   Right/l open
        Left/h/Esc back   Enter read
-       Tab msgs
+       p pin/unpin   Tab msgs
 
-Msgs   Up/Down move   PgUp/Dn page
-       Home/End jump   Left/h/Esc/Tab back
+Msgs   Up/Down/j/k scroll   PgUp/Dn page
+       g/G or Home/End jump   Left/h/Esc/Tab back
+       Enter/i reply   (Enter sends, Esc cancels)
 
 Live   Selected conversation refreshes every %s
        Conversation tree refreshes every %s
 
-? help   q quit   Ctrl+C force quit
+? help   R sign in again   q quit   Ctrl+C force quit
 `, s.messageRefreshInterval(), s.conversationRefreshInterval()))
 }
 
 func helpBarText(focusedComponent string) string {
 	switch focusedComponent {
 	case ViChat:
-		return "[::b]Msgs[::-] Up/Down  PgUp/Dn page  Home/End jump  Left/Esc/Tab back  ?  q"
+		return "[::b]Msgs[::-] Up/Down/j/k  PgUp/Dn  g/G jump  Enter/i reply  Left/Esc/Tab back  ?  q"
+	case InCompose:
+		return "[::b]Reply[::-] Enter send  Esc cancel"
 	default:
-		return "[::b]Tree[::-] Up/Down  Right open  Left/Esc back  Enter read  Tab msgs  ?  q"
+		return "[::b]Tree[::-] Up/Down/j/k  Right open  Left/Esc back  Enter read  p pin  Tab msgs  ?  q"
 	}
 }
 
@@ -207,6 +260,11 @@ func (s *AppState) globalKeyHandler(event *tcell.EventKey) *tcell.EventKey {
 	if event.Key() == tcell.KeyCtrlC {
 		s.requestStop()
 		return nil
+	}
+
+	// While composing a reply every other key belongs to the input field.
+	if s.focusedComponent == InCompose {
+		return event
 	}
 
 	if event.Key() == tcell.KeyRune {
@@ -220,6 +278,9 @@ func (s *AppState) globalKeyHandler(event *tcell.EventKey) *tcell.EventKey {
 			return nil
 		case 'q':
 			s.requestStop()
+			return nil
+		case 'R':
+			s.startInteractiveSignIn()
 			return nil
 		}
 	}
@@ -281,7 +342,11 @@ func (s *AppState) updateHelpBar() {
 		return
 	}
 
-	helpView.(*tview.TextView).SetText(helpBarText(s.focusedComponent))
+	text := helpBarText(s.focusedComponent)
+	if notice := s.noticeText(); notice != "" {
+		text = "[yellow::b]" + tview.Escape(notice) + "[-:-:-]  " + text
+	}
+	helpView.(*tview.TextView).SetText(text)
 	if helpModal, ok := s.components[MoHelp].(*tview.TextView); ok {
 		helpModal.SetText(s.keyboardHelpText())
 	}
@@ -289,7 +354,7 @@ func (s *AppState) updateHelpBar() {
 
 func (s *AppState) updatePanelFocus() {
 	treeView, treeOK := s.components[TrChat].(*tview.TreeView)
-	chatView, chatOK := s.components[ViChat].(*tview.List)
+	chatView, chatOK := s.components[ViChat].(*tview.TextView)
 	if !treeOK || !chatOK {
 		return
 	}
@@ -300,7 +365,7 @@ func (s *AppState) updatePanelFocus() {
 	chatView.SetBorderColor(inactiveColor)
 
 	switch s.focusedComponent {
-	case ViChat:
+	case ViChat, InCompose:
 		chatView.SetBorderColor(activeColor)
 	default:
 		treeView.SetBorderColor(activeColor)
@@ -330,11 +395,53 @@ func (s *AppState) treeKeyHandler(treeView *tview.TreeView) func(event *tcell.Ev
 			case 'l':
 				s.handleTreeRight(treeView, current)
 				return nil
+			case 'p':
+				s.togglePinForNode(treeView, current)
+				return nil
+			case 'j':
+				return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+			case 'k':
+				return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
 			}
 		}
 
 		return event
 	}
+}
+
+// togglePinForNode pins or unpins the chat under the cursor and redraws the
+// tree so it moves to (or from) the top of the Chats branch.
+func (s *AppState) togglePinForNode(treeView *tview.TreeView, node *tview.TreeNode) {
+	if node == nil || s.pins == nil {
+		return
+	}
+
+	target, ok := node.GetReference().(ConversationTarget)
+	if !ok || target.Kind == targetKindChannel {
+		return
+	}
+
+	pinned, err := s.pins.toggle(target.ID)
+	if err != nil {
+		s.appLogger().WithError(err).WithField("conversation_id", target.ID).Warn("unable to update pins")
+		return
+	}
+
+	s.appLogger().WithFields(logrus.Fields{
+		"conversation_id":    target.ID,
+		"conversation_title": target.Title,
+		"pinned":             pinned,
+	}).Info("pin updated")
+	s.rebuildConversationTree(treeView)
+}
+
+// rebuildConversationTree redraws the tree from current state while keeping
+// expansion and the selected conversation.
+func (s *AppState) rebuildConversationTree(treeView *tview.TreeView) {
+	state := captureTreeViewState(treeView.GetRoot(), treeView.GetCurrentNode())
+	rootNode, selectedNode, _ := s.buildConversationTree(state)
+	treeView.SetRoot(rootNode)
+	treeView.SetCurrentNode(selectedNode)
 }
 
 func (s *AppState) chatKeyHandler() func(event *tcell.EventKey) *tcell.EventKey {
@@ -343,15 +450,132 @@ func (s *AppState) chatKeyHandler() func(event *tcell.EventKey) *tcell.EventKey 
 		case tcell.KeyTab, tcell.KeyBacktab, tcell.KeyEscape, tcell.KeyLeft:
 			s.focusComponent(TrChat)
 			return nil
+		case tcell.KeyEnter:
+			s.openCompose()
+			return nil
 		}
 
-		if event.Key() == tcell.KeyRune && event.Rune() == 'h' {
-			s.focusComponent(TrChat)
-			return nil
+		// j/k, g/G, PgUp/PgDn and Home/End are handled by the text view itself.
+		if event.Key() == tcell.KeyRune {
+			switch event.Rune() {
+			case 'h':
+				s.focusComponent(TrChat)
+				return nil
+			case 'i':
+				s.openCompose()
+				return nil
+			}
 		}
 
 		return event
 	}
+}
+
+// openCompose reveals the reply line for the current conversation. Any text
+// left from a failed send is kept so it can be edited and retried.
+func (s *AppState) openCompose() {
+	if _, ok, _, _ := s.currentConversationSnapshot(); !ok {
+		return
+	}
+	compose, ok := s.components[InCompose].(*tview.InputField)
+	if !ok || s.messageColumn == nil {
+		return
+	}
+
+	s.messageColumn.ResizeItem(compose, 1, 0)
+	s.focusComponent(InCompose)
+}
+
+func (s *AppState) closeCompose(keepText bool) {
+	compose, ok := s.components[InCompose].(*tview.InputField)
+	if !ok || s.messageColumn == nil {
+		return
+	}
+
+	if !keepText {
+		compose.SetText("")
+	}
+	s.messageColumn.ResizeItem(compose, 0, 0)
+	s.focusComponent(ViChat)
+}
+
+func (s *AppState) composeDone(key tcell.Key) {
+	switch key {
+	case tcell.KeyEscape:
+		s.closeCompose(false)
+	case tcell.KeyEnter:
+		s.submitCompose()
+	}
+}
+
+func (s *AppState) submitCompose() {
+	compose, ok := s.components[InCompose].(*tview.InputField)
+	if !ok {
+		return
+	}
+
+	text := strings.TrimSpace(compose.GetText())
+	target, hasTarget, _, _ := s.currentConversationSnapshot()
+	if text == "" || !hasTarget {
+		s.closeCompose(false)
+		return
+	}
+
+	s.closeCompose(false)
+	s.updateConversationPaneTitle(target, time.Time{}, "sending...")
+	go s.deliverMessage(target, text)
+}
+
+// deliverMessage sends in the background, then either triggers an immediate
+// refresh so the message shows up, or puts the text back for another try.
+func (s *AppState) deliverMessage(target ConversationTarget, text string) {
+	sender := s.sendFunc
+	if sender == nil {
+		sender = s.sendMessage
+	}
+
+	ctx, cancel := context.WithTimeout(s.appContext(), sendMessageTimeout)
+	err := sender(ctx, target, text)
+	cancel()
+
+	if err != nil {
+		s.noteAuthFailure(err)
+		s.appLogger().WithError(err).WithFields(logrus.Fields{
+			"conversation_id":    target.ID,
+			"conversation_title": target.Title,
+		}).Warn("message send failed")
+		s.app.QueueUpdateDraw(func() { s.restoreFailedSend(target, text) })
+		return
+	}
+
+	s.appLogger().WithFields(logrus.Fields{
+		"conversation_id":    target.ID,
+		"conversation_title": target.Title,
+	}).Info("message sent")
+	s.startMessageRefresh()
+}
+
+// restoreFailedSend puts the text of a failed send back into the compose
+// field for a retry, but only while the same conversation is still selected
+// and nothing newer has been typed. The compose field is shared by every
+// conversation, so restoring blindly could send the text to the wrong chat
+// or wipe out a draft the user started in the meantime.
+func (s *AppState) restoreFailedSend(target ConversationTarget, text string) {
+	if !s.currentConversationIs(target.ID) {
+		s.appLogger().WithFields(logrus.Fields{
+			"conversation_id":    target.ID,
+			"conversation_title": target.Title,
+		}).Warn("failed message not restored: another conversation is selected")
+		return
+	}
+
+	compose, ok := s.components[InCompose].(*tview.InputField)
+	if ok && strings.TrimSpace(compose.GetText()) == "" {
+		compose.SetText(text)
+		s.updateConversationPaneTitle(target, time.Time{}, "send failed, press Enter to retry (see log)")
+		return
+	}
+	s.updateConversationPaneTitle(target, time.Time{}, "send failed (see log)")
 }
 
 func (s *AppState) activateTreeNode(node *tview.TreeNode) {
@@ -373,7 +597,7 @@ func (s *AppState) handleTreeRight(treeView *tview.TreeView, node *tview.TreeNod
 	}
 
 	if len(node.GetChildren()) == 0 {
-		s.loadConversationForNode(node)
+		s.enterConversationForNode(node)
 		s.focusMessagesPane()
 		return
 	}
@@ -472,7 +696,9 @@ func conversationHintText(node *tview.TreeNode) (string, string) {
 	name := strings.TrimSpace(node.GetText())
 	switch name {
 	case "Chats":
-		return "Choose a chat to read messages", "Up/Down selects. Enter opens."
+		return "Choose a chat to read messages", "Up/Down selects. Enter opens. p pins."
+	case "Meetings":
+		return "Choose a meeting chat to read messages", "Up/Down selects. Enter opens. p pins."
 	case "Teams", "Conversations":
 		return "Choose a channel or chat to read messages", "Right expands. Left or Esc goes back."
 	default:
@@ -488,12 +714,82 @@ func (s *AppState) showConversationHint(node *tview.TreeNode) {
 	s.clearCurrentConversation()
 
 	mainText, secondaryText := conversationHintText(node)
-	chatList := s.components[ViChat].(*tview.List)
-	chatList.Clear()
-	chatList.SetTitle("Messages").
+	chatView := s.components[ViChat].(*tview.TextView)
+	chatView.SetTitle("Messages").
 		SetBorder(true).
 		SetTitleAlign(tview.AlignCenter)
-	chatList.AddItem(mainText, secondaryText, 0, nil)
+	chatView.SetText(tview.Escape(mainText) + "\n" + tview.Escape(secondaryText))
+	chatView.ScrollToBeginning()
+}
+
+// conversationEntryAction describes what stepping into a conversation should
+// do with the messages pane.
+type conversationEntryAction int
+
+const (
+	// entryKeepPane leaves the pane alone: a load is already in flight or the
+	// messages were synced moments ago.
+	entryKeepPane conversationEntryAction = iota
+	// entryRefreshInPlace refetches in the background and redraws only if
+	// something changed, so the current messages stay on screen.
+	entryRefreshInPlace
+	// entryFullLoad replaces the pane with the loading status. Used for a
+	// conversation that is not the current one or whose last load failed.
+	entryFullLoad
+)
+
+func (a conversationEntryAction) String() string {
+	switch a {
+	case entryKeepPane:
+		return "keep"
+	case entryRefreshInPlace:
+		return "refresh"
+	case entryFullLoad:
+		return "load"
+	}
+	return fmt.Sprintf("conversationEntryAction(%d)", int(a))
+}
+
+// conversationEntryAction decides how to treat target when the user moves
+// into it. Selecting the node already loaded it, so a second full load would
+// only blank the pane and refetch what is already on screen.
+func (s *AppState) conversationEntryAction(target ConversationTarget, now time.Time) conversationEntryAction {
+	current, ok, _, syncedAt := s.currentConversationSnapshot()
+	if !ok || current.ID != target.ID {
+		return entryFullLoad
+	}
+	if atomic.LoadUint64(&s.activeLoadSeq) != 0 {
+		return entryKeepPane
+	}
+	if syncedAt.IsZero() {
+		// The initial load failed; the error text offers Right/l as the retry.
+		return entryFullLoad
+	}
+	if now.Sub(syncedAt) < s.messageRefreshInterval() {
+		return entryKeepPane
+	}
+	return entryRefreshInPlace
+}
+
+// enterConversationForNode is the Right/l handler for a leaf node. It keeps
+// the messages that are already drawn and refreshes them in place when they
+// are stale, falling back to a full load only when nothing usable is shown.
+func (s *AppState) enterConversationForNode(node *tview.TreeNode) {
+	if node == nil || len(node.GetChildren()) != 0 {
+		return
+	}
+
+	target, ok := node.GetReference().(ConversationTarget)
+	if !ok {
+		return
+	}
+
+	switch s.conversationEntryAction(target, time.Now()) {
+	case entryFullLoad:
+		s.loadConversationForNode(node)
+	case entryRefreshInPlace:
+		s.startMessageRefresh()
+	}
 }
 
 func (s *AppState) loadConversationForNode(node *tview.TreeNode) {
@@ -513,9 +809,8 @@ func (s *AppState) loadConversationForNode(node *tview.TreeNode) {
 	s.setCurrentConversation(target)
 	s.cancelActiveLoad()
 
-	chatList := s.components[ViChat].(*tview.List)
-	chatList.Clear()
-	chatList.SetTitle(conversationPaneTitle(target, time.Time{}, "loading...")).
+	chatView := s.components[ViChat].(*tview.TextView)
+	chatView.SetTitle(conversationPaneTitle(target, time.Time{}, "loading...")).
 		SetBorder(true).
 		SetTitleAlign(tview.AlignCenter)
 	s.chatPaneFocusable = true
@@ -526,7 +821,8 @@ func (s *AppState) loadConversationForNode(node *tview.TreeNode) {
 	s.replaceActiveLoadCancel(loadSeq, cancel)
 	loadingStarted := time.Now()
 	mainText, secondaryText := loadingStatusText(s.messageLimit, loadingStarted, 0)
-	chatList.AddItem(mainText, secondaryText, 0, nil)
+	chatView.SetText(mainText + "\n" + secondaryText)
+	chatView.ScrollToBeginning()
 
 	done := make(chan struct{})
 	go s.animateMessageLoading(loadSeq, loadingStarted, done)
@@ -557,13 +853,13 @@ func (s *AppState) animateMessageLoading(loadSeq uint64, startedAt time.Time, do
 					return
 				}
 
-				chatList := s.components[ViChat].(*tview.List)
-				if chatList.GetItemCount() == 0 {
+				chatView, ok := s.components[ViChat].(*tview.TextView)
+				if !ok {
 					return
 				}
 
 				mainText, secondaryText := loadingStatusText(s.messageLimit, startedAt, step)
-				chatList.SetItemText(0, mainText, secondaryText)
+				chatView.SetText(mainText + "\n" + secondaryText)
 			})
 		}
 	}

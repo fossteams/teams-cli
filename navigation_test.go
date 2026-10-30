@@ -70,3 +70,10 @@ func TestConversationHintTextForTeam(t *testing.T) {
 		t.Fatalf("expected team-specific hint, got %q", mainText)
 	}
 }
+
+func TestConversationHintTextForMeetings(t *testing.T) {
+	mainText, _ := conversationHintText(tview.NewTreeNode("Meetings"))
+	if !strings.Contains(mainText, "meeting") {
+		t.Fatalf("expected meeting hint, got %q", mainText)
+	}
+}

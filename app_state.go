@@ -19,6 +19,19 @@ type AppState struct {
 	cancel      context.CancelFunc
 
 	TeamsState
+	pins                         *pinStore
+	messaging                    *messagingSession
+	sessionMu                    sync.RWMutex
+	sendFunc                     func(ctx context.Context, target ConversationTarget, text string) error
+	tokenDir                     string
+	refreshOpts                  refreshOptions
+	refreshFunc                  func(ctx context.Context, interactive bool) error
+	reloadFunc                   func() error
+	tokenRefreshActive           uint32
+	lastTokenRefreshAt           int64
+	signInRequired               uint32
+	notice                       string
+	messageColumn                *tview.Flex
 	components                   map[string]tview.Primitive
 	loadSeq                      uint64
 	activeLoadSeq                uint64
@@ -207,6 +220,18 @@ func (s *AppState) rememberConversationSync(target ConversationTarget, signature
 	s.currentConversation = target
 	s.currentMessagesSignature = signature
 	s.lastMessageSyncAt = syncedAt
+}
+
+func (s *AppState) session() *messagingSession {
+	s.sessionMu.RLock()
+	defer s.sessionMu.RUnlock()
+	return s.messaging
+}
+
+func (s *AppState) setMessaging(session *messagingSession) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	s.messaging = session
 }
 
 func (s *AppState) liveRefreshEnabled() bool {

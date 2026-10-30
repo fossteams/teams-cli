@@ -1,6 +1,7 @@
 package main
 
 const (
+	InCompose     = "inCompose"
 	TvLoginStatus = "tvLoginStatus"
 	TvError       = "tvErrTitle"
 	TvHelp        = "tvHelp"

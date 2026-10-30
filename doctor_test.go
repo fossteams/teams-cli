@@ -147,3 +147,52 @@ func testJWT(t *testing.T, claims map[string]any) string {
 	return base64.RawURLEncoding.EncodeToString(headerBytes) + "." +
 		base64.RawURLEncoding.EncodeToString(claimsBytes) + ".signature"
 }
+
+func writeTestJWT(t *testing.T, dir, tokenType string, exp time.Time) {
+	t.Helper()
+	claims, _ := json.Marshal(map[string]any{"aud": "test", "exp": exp.Unix()})
+	token := "eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString(claims) + ".sig"
+	if err := os.WriteFile(filepath.Join(dir, "token-"+tokenType+".jwt"), []byte(token), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckRuntimeTokensReportsExpiredToken(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, time.October, 27, 14, 48, 0, 0, time.UTC)
+	writeTestJWT(t, dir, tokenTypeSkype, now.Add(time.Hour))
+	writeTestJWT(t, dir, tokenTypeChatSvcAgg, now.Add(-8*time.Minute))
+
+	err := checkRuntimeTokens(dir, now)
+
+	if err == nil {
+		t.Fatal("expected expired token to be reported")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "token-chatsvcagg.jwt") || !strings.Contains(msg, "expired") || !strings.Contains(msg, "8 minutes ago") {
+		t.Fatalf("expected expiry details, got %q", msg)
+	}
+	if !strings.Contains(msg, "refresh-token") {
+		t.Fatalf("expected refresh hint, got %q", msg)
+	}
+}
+
+func TestCheckRuntimeTokensAcceptsFreshTokens(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeTestJWT(t, dir, tokenTypeSkype, now.Add(time.Hour))
+	writeTestJWT(t, dir, tokenTypeChatSvcAgg, now.Add(time.Hour))
+
+	if err := checkRuntimeTokens(dir, now); err != nil {
+		t.Fatalf("expected fresh tokens to pass, got %v", err)
+	}
+}
+
+func TestCheckRuntimeTokensReportsMissingToken(t *testing.T) {
+	dir := t.TempDir()
+	writeTestJWT(t, dir, tokenTypeSkype, time.Now().Add(time.Hour))
+
+	if err := checkRuntimeTokens(dir, time.Now()); err == nil || !strings.Contains(err.Error(), "token-chatsvcagg.jwt") {
+		t.Fatalf("expected missing token to be reported, got %v", err)
+	}
+}

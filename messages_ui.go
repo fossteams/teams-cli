@@ -46,49 +46,64 @@ func messagesSignature(messages []csa.ChatMessage) string {
 	return fmt.Sprintf("%x", hasher.Sum64())
 }
 
-func (s *AppState) renderConversationMessages(target ConversationTarget, messages []csa.ChatMessage, syncedAt time.Time, preserveSelection bool) {
-	chatList := s.components[ViChat].(*tview.List)
-	previousCount := chatList.GetItemCount()
-	previousIndex := chatList.GetCurrentItem()
-	followTail := previousCount > 0 && previousIndex >= previousCount-1
+// messageListItem renders a message as a list entry: the highlighted line
+// carries the author and time, the line beneath carries the message text.
+func messageListItem(message csa.ChatMessage, now time.Time, nameFor func(mri string) string) (string, string) {
+	header := strings.TrimSpace(message.ImDisplayName)
+	if composed := time.Time(message.ComposeTime); !composed.IsZero() {
+		local := composed.Local()
+		layout := "15:04"
+		if local.YearDay() != now.Local().YearDay() || local.Year() != now.Local().Year() {
+			layout = "Jan 02 15:04"
+		}
+		header += "  " + local.Format(layout)
+	}
+
+	return header, renderMessageText(message.Content, nameFor)
+}
+
+const messageAuthorStyle = "[green::b]"
+
+func (s *AppState) renderConversationMessages(target ConversationTarget, messages []csa.ChatMessage, syncedAt time.Time, preserveScroll bool) {
+	chatView := s.components[ViChat].(*tview.TextView)
 	status := ""
 	if !syncedAt.IsZero() {
 		status = s.conversationSyncStatus(syncedAt)
 	}
 
-	chatList.Clear()
-	chatList.SetTitle(conversationPaneTitle(target, time.Time{}, status)).
+	chatView.SetTitle(conversationPaneTitle(target, time.Time{}, status)).
 		SetBorder(true).
 		SetTitleAlign(tview.AlignCenter)
 	s.chatPaneFocusable = true
 
+	now := time.Now()
+	var text strings.Builder
 	for _, message := range messages {
 		if message.ImDisplayName == "" {
 			continue
 		}
-		chatList.AddItem(textMessage(message.Content), message.ImDisplayName, 0, nil)
+		header, body := messageListItem(message, now, s.displayNameFor)
+		text.WriteString(messageAuthorStyle)
+		text.WriteString(tview.Escape(header))
+		text.WriteString("[-:-:-]\n")
+		text.WriteString(tview.Escape(body))
+		text.WriteString("\n\n")
+	}
+	if text.Len() == 0 {
+		text.WriteString(fmt.Sprintf("No recent messages found\nLoaded the latest %d messages for this conversation.", s.messageLimit))
 	}
 
-	if chatList.GetItemCount() == 0 {
-		chatList.AddItem("No recent messages found", fmt.Sprintf("Loaded the latest %d messages for this conversation.", s.messageLimit), 0, nil)
-	}
-
-	if !preserveSelection || chatList.GetItemCount() == 0 {
-		return
-	}
-
-	switch {
-	case followTail:
-		chatList.SetCurrentItem(chatList.GetItemCount() - 1)
-	case previousIndex < chatList.GetItemCount():
-		chatList.SetCurrentItem(previousIndex)
-	default:
-		chatList.SetCurrentItem(chatList.GetItemCount() - 1)
+	// SetText keeps the view pinned to the end when it already was (tview
+	// tracks that itself), and keeps the scroll offset otherwise. A freshly
+	// opened conversation always starts at the newest message.
+	chatView.SetText(strings.TrimRight(text.String(), "\n"))
+	if !preserveScroll {
+		chatView.ScrollToEnd()
 	}
 }
 
 func (s *AppState) updateConversationPaneTitle(target ConversationTarget, syncedAt time.Time, status string) {
-	chatList, ok := s.components[ViChat].(*tview.List)
+	chatView, ok := s.components[ViChat].(*tview.TextView)
 	if !ok {
 		return
 	}
@@ -96,24 +111,24 @@ func (s *AppState) updateConversationPaneTitle(target ConversationTarget, synced
 		status = s.conversationSyncStatus(syncedAt)
 	}
 
-	chatList.SetTitle(conversationPaneTitle(target, time.Time{}, status)).
+	chatView.SetTitle(conversationPaneTitle(target, time.Time{}, status)).
 		SetBorder(true).
 		SetTitleAlign(tview.AlignCenter)
 }
 
 func (s *AppState) renderConversationLoadError(target ConversationTarget, err error) {
-	chatList, ok := s.components[ViChat].(*tview.List)
+	chatView, ok := s.components[ViChat].(*tview.TextView)
 	if !ok {
 		return
 	}
 
 	mainText, secondaryText := conversationLoadErrorText(err)
-	chatList.Clear()
-	chatList.SetTitle(conversationPaneTitle(target, time.Time{}, "load failed")).
+	chatView.SetTitle(conversationPaneTitle(target, time.Time{}, "load failed")).
 		SetBorder(true).
 		SetTitleAlign(tview.AlignCenter)
-	chatList.AddItem(mainText, secondaryText, 0, nil)
-	chatList.AddItem("Retry", "Press Right or l to retry this conversation. Esc returns to the list.", 0, nil)
+	chatView.SetText(tview.Escape(mainText) + "\n" + tview.Escape(secondaryText) +
+		"\n\nRetry: press Right or l to retry this conversation. Esc returns to the list.")
+	chatView.ScrollToBeginning()
 	s.chatPaneFocusable = true
 }
 

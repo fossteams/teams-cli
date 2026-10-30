@@ -7,11 +7,13 @@ import (
 	"github.com/fossteams/teams-api/pkg/models"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 type TeamsState struct {
 	teamsClient *teams_api.TeamsClient
+	clientMu    sync.RWMutex
 
 	conversations      *csa.ConversationResponse
 	me                 *models.User
@@ -19,7 +21,18 @@ type TeamsState struct {
 	pinnedChannelOrder map[string]int
 	channelById        map[string]Channel
 	teamById           map[string]*csa.Team
+	// displayNames caches member MRI -> display name. An empty value records a
+	// lookup that returned nothing so it is not retried on every refresh. The
+	// map is replaced, never mutated, and namesMu guards the replacement: the
+	// background tree refresh reads it while the UI goroutine swaps it.
+	displayNames  map[string]string
+	namesMu       sync.RWMutex
+	nameLookupErr error
+	// duplicateChatIDs lists chats the last conversations response repeated.
+	duplicateChatIDs []string
 }
+
+const profileLookupBatchSize = 100
 
 type Channel struct {
 	*csa.Channel
@@ -29,6 +42,17 @@ type Channel struct {
 type ConversationTarget struct {
 	ID    string
 	Title string
+	Kind  string
+}
+
+const (
+	targetKindChannel = "channel"
+	targetKindChat    = "chat"
+	targetKindMeeting = "meeting"
+)
+
+func isMeetingChat(chat csa.Chat) bool {
+	return strings.EqualFold(strings.TrimSpace(chat.ChatType), "meeting")
 }
 
 type conversationData struct {
@@ -37,12 +61,28 @@ type conversationData struct {
 	pinnedChannelOrder map[string]int
 	channelById        map[string]Channel
 	teamById           map[string]*csa.Team
+	displayNames       map[string]string
+	nameLookupErr      error
+	duplicateChatIDs   []string
+}
+
+func (s *TeamsState) client() *teams_api.TeamsClient {
+	s.clientMu.RLock()
+	defer s.clientMu.RUnlock()
+	return s.teamsClient
+}
+
+func (s *TeamsState) setClient(client *teams_api.TeamsClient) {
+	s.clientMu.Lock()
+	defer s.clientMu.Unlock()
+	s.teamsClient = client
 }
 
 func (s *TeamsState) init(client *teams_api.TeamsClient) error {
 	if client == nil {
 		return fmt.Errorf("client is nil")
 	}
+	s.setClient(client)
 
 	var err error
 	s.me, err = client.GetMe()
@@ -60,16 +100,17 @@ func (s *TeamsState) init(client *teams_api.TeamsClient) error {
 }
 
 func (s *TeamsState) fetchConversationData() (*conversationData, error) {
-	if s.teamsClient == nil {
+	client := s.client()
+	if client == nil {
 		return nil, fmt.Errorf("teams client is nil")
 	}
 
-	pinnedChannels, err := s.teamsClient.GetPinnedChannels()
+	pinnedChannels, err := client.GetPinnedChannels()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get pinned channels: %v", err)
 	}
 
-	conversations, err := s.teamsClient.GetConversations()
+	conversations, err := client.GetConversations()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get conversations: %v", err)
 	}
@@ -86,8 +127,12 @@ func (s *TeamsState) fetchConversationData() (*conversationData, error) {
 		data.pinnedChannelOrder[string(channelID)] = idx
 	}
 
+	conversations.Chats, data.duplicateChatIDs = dedupeChats(conversations.Chats)
+
+	data.displayNames, data.nameLookupErr = s.resolveDisplayNames(conversations.Chats)
+
 	sortTeams(data.conversations.Teams)
-	sortChats(data.conversations.Chats, s.selfMri(), s.selfDisplayName())
+	sortChats(data.conversations.Chats, s.selfMri(), s.selfDisplayName(), data.displayNames)
 
 	for teamIdx := range data.conversations.Teams {
 		team := &data.conversations.Teams[teamIdx]
@@ -115,6 +160,132 @@ func (s *TeamsState) applyConversationData(data *conversationData) {
 	s.pinnedChannelOrder = data.pinnedChannelOrder
 	s.channelById = data.channelById
 	s.teamById = data.teamById
+	s.setDisplayNames(data.displayNames)
+	s.nameLookupErr = data.nameLookupErr
+	s.duplicateChatIDs = data.duplicateChatIDs
+}
+
+// dedupeChats drops repeated chat entries. The aggregator occasionally lists
+// one conversation twice, which showed up as the same chat twice in the tree.
+// The entry with the newest activity wins so the latest message is kept.
+// Returns the surviving chats in their original order plus the repeated IDs.
+func dedupeChats(chats []csa.Chat) ([]csa.Chat, []string) {
+	indexByID := map[string]int{}
+	result := make([]csa.Chat, 0, len(chats))
+	var duplicates []string
+	for _, chat := range chats {
+		if chat.Id == "" {
+			result = append(result, chat)
+			continue
+		}
+		if idx, seen := indexByID[chat.Id]; seen {
+			if len(duplicates) == 0 || duplicates[len(duplicates)-1] != chat.Id {
+				duplicates = append(duplicates, chat.Id)
+			}
+			if chatActivityTime(chat).After(chatActivityTime(result[idx])) {
+				result[idx] = chat
+			}
+			continue
+		}
+		indexByID[chat.Id] = len(result)
+		result = append(result, chat)
+	}
+
+	return result, duplicates
+}
+
+// resolveDisplayNames returns the cached name map extended with lookups for any
+// chat members the conversations response left unnamed. Lookup failures are
+// returned alongside the partial map rather than aborting the refresh.
+func (s *TeamsState) resolveDisplayNames(chats []csa.Chat) (map[string]string, error) {
+	known := s.displayNameMap()
+	names := make(map[string]string, len(known))
+	for mri, name := range known {
+		names[mri] = name
+	}
+
+	missing := unresolvedMemberMris(chats, s.selfMri(), names)
+	client := s.client()
+	if len(missing) == 0 || client == nil {
+		return names, nil
+	}
+
+	var firstErr error
+	for _, batch := range chunkStrings(missing, profileLookupBatchSize) {
+		users, err := client.FetchShortProfile(batch)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("profile lookup failed for %d members: %v", len(batch), err)
+			}
+			continue
+		}
+		for _, mri := range batch {
+			names[mri] = ""
+		}
+		for _, user := range users {
+			if user.Mri != "" && strings.TrimSpace(user.DisplayName) != "" {
+				names[user.Mri] = strings.TrimSpace(user.DisplayName)
+			}
+		}
+	}
+
+	return names, firstErr
+}
+
+// unresolvedMemberMris lists, sorted and de-duplicated, the members of
+// non-meeting chats that have no friendly name and are not already in known.
+func unresolvedMemberMris(chats []csa.Chat, selfMri string, known map[string]string) []string {
+	seen := map[string]struct{}{}
+	mris := []string{}
+	for _, chat := range chats {
+		if isMeetingChat(chat) {
+			continue
+		}
+		for _, member := range chat.Members {
+			if member.Mri == "" || member.Mri == selfMri || strings.TrimSpace(member.FriendlyName) != "" {
+				continue
+			}
+			if _, ok := known[member.Mri]; ok {
+				continue
+			}
+			if _, ok := seen[member.Mri]; ok {
+				continue
+			}
+			seen[member.Mri] = struct{}{}
+			mris = append(mris, member.Mri)
+		}
+	}
+	sort.Strings(mris)
+	return mris
+}
+
+func chunkStrings(items []string, size int) [][]string {
+	if size <= 0 {
+		size = len(items)
+	}
+	chunks := [][]string{}
+	for start := 0; start < len(items); start += size {
+		end := start + size
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
+}
+
+// displayNameMap returns the current name cache. Callers only read it; a
+// refresh installs a new map through setDisplayNames instead of editing it.
+func (s *TeamsState) displayNameMap() map[string]string {
+	s.namesMu.RLock()
+	defer s.namesMu.RUnlock()
+	return s.displayNames
+}
+
+func (s *TeamsState) setDisplayNames(names map[string]string) {
+	s.namesMu.Lock()
+	defer s.namesMu.Unlock()
+	s.displayNames = names
 }
 
 func (s *TeamsState) selfMri() string {
@@ -131,6 +302,19 @@ func (s *TeamsState) selfDisplayName() string {
 	}
 
 	return s.me.DisplayName
+}
+
+// displayNameFor resolves a member MRI to a display name from the profile
+// cache, or to your own name for your own MRI. Unknown MRIs yield "".
+func (s *TeamsState) displayNameFor(mri string) string {
+	if mri == "" {
+		return ""
+	}
+	if mri == s.selfMri() {
+		return s.selfDisplayName()
+	}
+
+	return strings.TrimSpace(s.displayNameMap()[mri])
 }
 
 func sortTeams(teams []csa.Team) {
@@ -187,16 +371,16 @@ func lessChannel(left, right csa.Channel, pinnedChannelOrder map[string]int) boo
 	return normalizedSortText(left.DisplayName) < normalizedSortText(right.DisplayName)
 }
 
-func sortChats(chats []csa.Chat, selfMri, selfDisplayName string) {
+func sortChats(chats []csa.Chat, selfMri, selfDisplayName string, displayNames map[string]string) {
 	sort.SliceStable(chats, func(i, j int) bool {
-		return lessChat(chats[i], chats[j], selfMri, selfDisplayName)
+		return lessChat(chats[i], chats[j], selfMri, selfDisplayName, displayNames)
 	})
 }
 
-func lessChat(left, right csa.Chat, selfMri, selfDisplayName string) bool {
-	if left.Hidden != right.Hidden {
-		return !left.Hidden && right.Hidden
-	}
+// lessChat orders by recency. The API's "hidden" flag is deliberately ignored:
+// current Teams sets it on effectively every direct and group chat, so using it
+// buries the conversations people actually want behind hundreds of meeting chats.
+func lessChat(left, right csa.Chat, selfMri, selfDisplayName string, displayNames map[string]string) bool {
 	if left.IsSticky != right.IsSticky {
 		return left.IsSticky && !right.IsSticky
 	}
@@ -207,8 +391,8 @@ func lessChat(left, right csa.Chat, selfMri, selfDisplayName string) bool {
 		return leftTime.After(rightTime)
 	}
 
-	leftTitle := normalizedSortText(resolveChatTitle(left, selfMri, selfDisplayName))
-	rightTitle := normalizedSortText(resolveChatTitle(right, selfMri, selfDisplayName))
+	leftTitle := normalizedSortText(resolveChatTitleWith(left, selfMri, selfDisplayName, displayNames))
+	rightTitle := normalizedSortText(resolveChatTitleWith(right, selfMri, selfDisplayName, displayNames))
 	if leftTitle != rightTitle {
 		return leftTitle < rightTitle
 	}

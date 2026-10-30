@@ -189,3 +189,27 @@ func TestUsageTextIncludesDiagnosticsAndRefreshFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestParseAppOptionsRefreshTokenCommand(t *testing.T) {
+	options, err := parseAppOptions([]string{"refresh-token", "--headed", "--browser", "/opt/chrome", "--profile-dir", "/tmp/profile", "--token-dir", "/tmp/tokens"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !options.RefreshTokens || !options.ForceHeaded || options.BrowserPath != "/opt/chrome" || options.ProfileDir != "/tmp/profile" || options.TokenDir != "/tmp/tokens" {
+		t.Fatalf("unexpected options %+v", options)
+	}
+	options, err = parseAppOptions([]string{"refresh-token", "--logout"})
+	if err != nil || !options.RefreshTokens || !options.Logout {
+		t.Fatalf("expected logout flag, got %+v err=%v", options, err)
+	}
+}
+
+func TestParseAppOptionsRefreshTokenSilent(t *testing.T) {
+	options, err := parseAppOptions([]string{"refresh-token", "--silent"})
+	if err != nil || !options.RefreshTokens || !options.SilentOnly {
+		t.Fatalf("expected silent-only refresh, got %+v err=%v", options, err)
+	}
+	if _, err := parseAppOptions([]string{"refresh-token", "--silent", "--headed"}); err == nil {
+		t.Fatal("expected --silent and --headed to conflict")
+	}
+}

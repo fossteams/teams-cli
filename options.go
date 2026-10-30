@@ -20,6 +20,12 @@ type AppOptions struct {
 	ShowHelp                    bool
 	ShowVersion                 bool
 	DoctorMode                  bool
+	RefreshTokens               bool
+	ForceHeaded                 bool
+	BrowserPath                 string
+	ProfileDir                  string
+	Logout                      bool
+	SilentOnly                  bool
 }
 
 func defaultAppOptions() AppOptions {
@@ -41,6 +47,28 @@ func parseAppOptions(args []string) (AppOptions, error) {
 		switch {
 		case arg == "doctor" || arg == "--doctor":
 			options.DoctorMode = true
+		case arg == "refresh-token" || arg == "refresh-tokens" || arg == "login":
+			options.RefreshTokens = true
+		case arg == "--headed":
+			options.ForceHeaded = true
+		case arg == "--silent":
+			options.SilentOnly = true
+		case arg == "--logout":
+			options.Logout = true
+		case arg == "--browser" || strings.HasPrefix(arg, "--browser="):
+			raw, nextIdx, err := optionValue(args, idx, "--browser")
+			if err != nil {
+				return options, err
+			}
+			options.BrowserPath = strings.TrimSpace(raw)
+			idx = nextIdx
+		case arg == "--profile-dir" || strings.HasPrefix(arg, "--profile-dir="):
+			raw, nextIdx, err := optionValue(args, idx, "--profile-dir")
+			if err != nil {
+				return options, err
+			}
+			options.ProfileDir = strings.TrimSpace(raw)
+			idx = nextIdx
 		case arg == "--help" || arg == "-h":
 			options.ShowHelp = true
 		case arg == "--version":
@@ -115,6 +143,10 @@ func parseAppOptions(args []string) (AppOptions, error) {
 		}
 	}
 
+	if options.SilentOnly && options.ForceHeaded {
+		return options, fmt.Errorf("--silent and --headed cannot be combined")
+	}
+
 	return options, nil
 }
 
@@ -184,6 +216,7 @@ func usageText(program string) string {
 	return fmt.Sprintf(`Usage:
   %s [options]
   %s doctor [options]
+  %s refresh-token [--headed|--silent] [--browser <path>] [--profile-dir <dir>] [--logout]
 
 Options:
   -h, --help                  Show this help text
@@ -197,9 +230,20 @@ Options:
       --no-live               Disable background refresh polling
       --doctor                Run diagnostics instead of launching the TUI
 
+refresh-token signs in to Teams with a Chrome-family browser and saves fresh
+tokens. It first tries silently with the saved browser profile and only shows
+a window when a sign-in is needed. The TUI runs the same refresh on its own
+when tokens expire; press R inside it to sign in again by hand.
+      --headed                Always show the browser window
+      --silent                Never show a window; fail if a sign-in is needed
+      --browser <path>        Browser executable (default: Chrome, Chromium, Edge, or a Playwright Chromium)
+      --profile-dir <dir>     Browser profile that remembers the sign-in
+      --logout                Delete the browser profile and exit
+
 Examples:
   %s --msg 20
   %s --token-dir ~/.config/fossteams --debug
   %s doctor --token-dir ~/.config/fossteams
-`, program, program, defaultLiveMessageRefreshInterval, defaultLiveConversationRefreshInterval, program, program, program)
+  %s refresh-token
+`, program, program, program, defaultLiveMessageRefreshInterval, defaultLiveConversationRefreshInterval, program, program, program, program)
 }

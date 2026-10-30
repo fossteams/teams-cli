@@ -7,17 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-	"unsafe"
 
-	"github.com/dgrijalva/jwt-go"
-	teams_api "github.com/fossteams/teams-api"
 	api "github.com/fossteams/teams-api/pkg"
 	"github.com/fossteams/teams-api/pkg/csa"
+	"github.com/fossteams/teams-api/pkg/models"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -30,15 +28,16 @@ func TestFetchMessagesRetriesAndReturnsLatestMessages(t *testing.T) {
 	var attempts int32
 
 	state := AppState{
-		TeamsState: TeamsState{
-			teamsClient: newTestTeamsClient(t),
-		},
 		logger:       discardLogger,
+		messaging:    testMessagingSession(),
 		messageLimit: 2,
 		httpClient: &http.Client{
 			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 				atomic.AddInt32(&attempts, 1)
 
+				if req.URL.Host != "amer.ng.msg.example" {
+					t.Fatalf("expected request to the session host, got %s", req.URL.Host)
+				}
 				if got := req.URL.Query().Get("pageSize"); got != "2" {
 					t.Fatalf("expected pageSize=2, got %q", got)
 				}
@@ -82,10 +81,8 @@ func TestFetchMessagesMalformedPayloadDoesNotRetry(t *testing.T) {
 	var attempts int32
 
 	state := AppState{
-		TeamsState: TeamsState{
-			teamsClient: newTestTeamsClient(t),
-		},
 		logger:       discardLogger,
+		messaging:    testMessagingSession(),
 		messageLimit: 5,
 		httpClient: &http.Client{
 			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -148,42 +145,13 @@ func TestRunLiveRefreshLoopStopsWhenContextCancelled(t *testing.T) {
 	}
 }
 
-func newTestTeamsClient(t *testing.T) *teams_api.TeamsClient {
-	t.Helper()
-
-	chatSvc, err := csa.NewCSAService(
-		&api.TeamsToken{
-			Inner: &jwt.Token{Raw: "chat-service-token"},
-			Type:  api.TokenBearer,
-		},
-		&api.SkypeToken{
-			Inner: &jwt.Token{Raw: "skype-token"},
-			Type:  api.TokenSkype,
-		},
-	)
-	if err != nil {
-		t.Fatalf("unable to create CSA service: %v", err)
-	}
-
-	client := &teams_api.TeamsClient{}
-	setUnexportedField(t, client, "chatSvc", chatSvc)
-	return client
+func testMessagingSession() *messagingSession {
+	host, _ := url.Parse("https://amer.ng.msg.example/")
+	return &messagingSession{host: host, skypeToken: "test-session-token"}
 }
 
-func setUnexportedField(t *testing.T, target any, field string, value any) {
-	t.Helper()
-
-	targetValue := reflect.ValueOf(target)
-	if targetValue.Kind() != reflect.Pointer || targetValue.IsNil() {
-		t.Fatal("target must be a non-nil pointer")
-	}
-
-	fieldValue := targetValue.Elem().FieldByName(field)
-	if !fieldValue.IsValid() {
-		t.Fatalf("field %q does not exist", field)
-	}
-
-	reflect.NewAt(fieldValue.Type(), unsafe.Pointer(fieldValue.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
+func testSelfUser(name string) *models.User {
+	return &models.User{DisplayName: name, Mri: "8:orgid:self"}
 }
 
 func testHTTPResponse(statusCode int, body string) *http.Response {
